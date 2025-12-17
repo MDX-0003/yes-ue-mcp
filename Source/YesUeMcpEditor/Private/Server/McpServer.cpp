@@ -48,9 +48,9 @@ bool FMcpServer::Start(int32 Port, const FString& BindAddress)
 		return false;
 	}
 
-	// Bind MCP route
+	// Bind MCP route using /message endpoint (standard MCP SSE endpoint)
 	McpRouteHandle = HttpRouter->BindRoute(
-		FHttpPath(TEXT("/mcp")),
+		FHttpPath(TEXT("/message")),
 		EHttpServerRequestVerbs::VERB_POST | EHttpServerRequestVerbs::VERB_GET | EHttpServerRequestVerbs::VERB_DELETE | EHttpServerRequestVerbs::VERB_OPTIONS,
 		FHttpRequestHandler::CreateRaw(this, &FMcpServer::HandleMcpRequest)
 	);
@@ -65,7 +65,7 @@ bool FMcpServer::Start(int32 Port, const FString& BindAddress)
 	HttpServerModule.StartAllListeners();
 
 	bIsRunning = true;
-	UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP Server started on http://%s:%d/mcp"), *BindAddress, ServerPort);
+	UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP Server started on http://%s:%d/message"), *BindAddress, ServerPort);
 
 	return true;
 }
@@ -94,13 +94,39 @@ void FMcpServer::Stop()
 
 bool FMcpServer::HandleMcpRequest(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
 {
+	// Log detailed request info
+	FString VerbString;
+	switch (Request.Verb)
+	{
+	case EHttpServerRequestVerbs::VERB_GET: VerbString = TEXT("GET"); break;
+	case EHttpServerRequestVerbs::VERB_POST: VerbString = TEXT("POST"); break;
+	case EHttpServerRequestVerbs::VERB_DELETE: VerbString = TEXT("DELETE"); break;
+	case EHttpServerRequestVerbs::VERB_OPTIONS: VerbString = TEXT("OPTIONS"); break;
+	default: VerbString = FString::Printf(TEXT("UNKNOWN(%d)"), static_cast<int32>(Request.Verb)); break;
+	}
+
+	UE_LOG(LogYesUeMcpEditor, Log, TEXT("=== MCP Request ==="));
+	UE_LOG(LogYesUeMcpEditor, Log, TEXT("  Verb: %s"), *VerbString);
+	UE_LOG(LogYesUeMcpEditor, Log, TEXT("  Path: %s"), *Request.RelativePath.GetPath());
+	UE_LOG(LogYesUeMcpEditor, Log, TEXT("  Headers:"));
+	for (const auto& Header : Request.Headers)
+	{
+		FString HeaderValues = FString::Join(Header.Value, TEXT(", "));
+		UE_LOG(LogYesUeMcpEditor, Log, TEXT("    %s: %s"), *Header.Key, *HeaderValues);
+	}
+	if (Request.Body.Num() > 0)
+	{
+		FString BodyString = FString(UTF8_TO_TCHAR(reinterpret_cast<const char*>(Request.Body.GetData())));
+		UE_LOG(LogYesUeMcpEditor, Log, TEXT("  Body: %s"), *BodyString);
+	}
+
 	// Handle CORS preflight
 	if (Request.Verb == EHttpServerRequestVerbs::VERB_OPTIONS)
 	{
 		TUniquePtr<FHttpServerResponse> Response = FHttpServerResponse::Create(TEXT(""), TEXT("text/plain"));
-		Response->Headers.Add(TEXT("Access-Control-Allow-Origin"), TEXT("*"));
-		Response->Headers.Add(TEXT("Access-Control-Allow-Methods"), TEXT("GET, POST, DELETE, OPTIONS"));
-		Response->Headers.Add(TEXT("Access-Control-Allow-Headers"), TEXT("Content-Type, Accept, Mcp-Session-Id, MCP-Protocol-Version"));
+		Response->Headers.Add(TEXT("Access-Control-Allow-Origin"), {TEXT("*")});
+		Response->Headers.Add(TEXT("Access-Control-Allow-Methods"), {TEXT("GET, POST, DELETE, OPTIONS")});
+		Response->Headers.Add(TEXT("Access-Control-Allow-Headers"), {TEXT("Content-Type, Accept, Mcp-Session-Id, MCP-Protocol-Version")});
 		Response->Code = EHttpServerResponseCodes::NoContent;
 		OnComplete(MoveTemp(Response));
 		return true;
@@ -113,16 +139,34 @@ bool FMcpServer::HandleMcpRequest(const FHttpServerRequest& Request, const FHttp
 		bInitialized = false;
 
 		TUniquePtr<FHttpServerResponse> Response = FHttpServerResponse::Create(TEXT(""), TEXT("text/plain"));
-		Response->Headers.Add(TEXT("Access-Control-Allow-Origin"), TEXT("*"));
+		Response->Headers.Add(TEXT("Access-Control-Allow-Origin"), {TEXT("*")});
 		Response->Code = EHttpServerResponseCodes::NoContent;
 		OnComplete(MoveTemp(Response));
 		return true;
 	}
 
-	// Handle GET (SSE stream - not implemented yet)
+	// Handle GET (health check / info endpoint)
 	if (Request.Verb == EHttpServerRequestVerbs::VERB_GET)
 	{
-		SendErrorResponse(OnComplete, 501, EMcpErrorCode::ServerError, TEXT("SSE streaming not implemented"));
+		UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP GET request - returning health check info"));
+
+		// Return server info for health checks
+		TSharedPtr<FJsonObject> Info = MakeShareable(new FJsonObject);
+		Info->SetStringField(TEXT("name"), ServerInfo.Name);
+		Info->SetStringField(TEXT("version"), ServerInfo.Version);
+		Info->SetStringField(TEXT("protocol"), MCP_PROTOCOL_VERSION);
+		Info->SetBoolField(TEXT("running"), bIsRunning);
+
+		FString JsonString;
+		TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&JsonString);
+		FJsonSerializer::Serialize(Info.ToSharedRef(), Writer);
+
+		UE_LOG(LogYesUeMcpEditor, Verbose, TEXT("MCP Health check response: %s"), *JsonString);
+
+		TUniquePtr<FHttpServerResponse> Response = FHttpServerResponse::Create(JsonString, TEXT("application/json"));
+		Response->Headers.Add(TEXT("Access-Control-Allow-Origin"), {TEXT("*")});
+		Response->Code = EHttpServerResponseCodes::Ok;
+		OnComplete(MoveTemp(Response));
 		return true;
 	}
 
@@ -167,7 +211,7 @@ bool FMcpServer::HandleMcpRequest(const FHttpServerRequest& Request, const FHttp
 		if (McpRequest.IsNotification())
 		{
 			TUniquePtr<FHttpServerResponse> HttpResponse = FHttpServerResponse::Create(TEXT(""), TEXT("text/plain"));
-			HttpResponse->Headers.Add(TEXT("Access-Control-Allow-Origin"), TEXT("*"));
+			HttpResponse->Headers.Add(TEXT("Access-Control-Allow-Origin"), {TEXT("*")});
 			HttpResponse->Code = EHttpServerResponseCodes::Accepted;
 			OnComplete(MoveTemp(HttpResponse));
 			return;
@@ -300,14 +344,17 @@ void FMcpServer::SendResponse(const FHttpResultCallback& OnComplete, const FMcpR
 {
 	FString JsonString = Response.ToJsonString();
 
-	UE_LOG(LogYesUeMcpEditor, Verbose, TEXT("MCP Response: %s"), *JsonString);
+	UE_LOG(LogYesUeMcpEditor, Log, TEXT("=== MCP Response ==="));
+	UE_LOG(LogYesUeMcpEditor, Log, TEXT("  Status Code: %d"), StatusCode);
+	UE_LOG(LogYesUeMcpEditor, Log, TEXT("  Body: %s"), *JsonString);
 
 	TUniquePtr<FHttpServerResponse> HttpResponse = FHttpServerResponse::Create(JsonString, TEXT("application/json"));
-	HttpResponse->Headers.Add(TEXT("Access-Control-Allow-Origin"), TEXT("*"));
+	HttpResponse->Headers.Add(TEXT("Access-Control-Allow-Origin"), {TEXT("*")});
 
 	if (!CurrentSessionId.IsEmpty())
 	{
-		HttpResponse->Headers.Add(TEXT("Mcp-Session-Id"), CurrentSessionId);
+		HttpResponse->Headers.Add(TEXT("Mcp-Session-Id"), {CurrentSessionId});
+		UE_LOG(LogYesUeMcpEditor, Log, TEXT("  Session-Id: %s"), *CurrentSessionId);
 	}
 
 	HttpResponse->Code = static_cast<EHttpServerResponseCodes>(StatusCode);
