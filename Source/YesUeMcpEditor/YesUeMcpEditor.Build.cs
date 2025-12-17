@@ -20,7 +20,7 @@ public class YesUeMcpEditor : ModuleRules
 		{
 			// HTTP Server
 			"HTTP",
-			"HttpServer",
+			"HTTPServer",
 
 			// Editor Framework
 			"UnrealEd",

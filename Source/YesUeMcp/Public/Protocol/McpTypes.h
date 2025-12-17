@@ -121,7 +121,7 @@ struct YESUEMCP_API FMcpResponse
 	TSharedPtr<FJsonObject> Result;
 
 	/** Error object (mutually exclusive with Result) */
-	TSharedPtr<FJsonObject> Error;
+	TSharedPtr<FJsonObject> ErrorData;
 
 	/** Create success response */
 	static FMcpResponse Success(const FString& InId, TSharedPtr<FJsonObject> InResult);

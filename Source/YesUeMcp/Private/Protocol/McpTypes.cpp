@@ -107,7 +107,7 @@ FMcpResponse FMcpResponse::Success(const FString& InId, TSharedPtr<FJsonObject> 
 	FMcpResponse Response;
 	Response.Id = InId;
 	Response.Result = InResult;
-	Response.Error = nullptr;
+	Response.ErrorData = nullptr;
 	return Response;
 }
 
@@ -118,7 +118,7 @@ FMcpResponse FMcpResponse::Error(const FString& InId, int32 Code, const FString&
 	Response.Id = InId;
 	Response.Result = nullptr;
 
-	Response.Error = MakeShareable(new FJsonObject);
+	Response.ErrorData = MakeShareable(new FJsonObject);
 	Response.Error->SetNumberField(TEXT("code"), Code);
 	Response.Error->SetStringField(TEXT("message"), Message);
 	if (Data.IsValid())
@@ -139,9 +139,9 @@ TSharedPtr<FJsonObject> FMcpResponse::ToJson() const
 	{
 		JsonObject->SetObjectField(TEXT("result"), Result);
 	}
-	else if (Error.IsValid())
+	else if (ErrorData.IsValid())
 	{
-		JsonObject->SetObjectField(TEXT("error"), Error);
+		JsonObject->SetObjectField(TEXT("error"), ErrorData);
 	}
 
 	return JsonObject;

@@ -43,8 +43,7 @@ public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 
-	/** Get the MCP server instance */
-	UFUNCTION(BlueprintCallable, Category = "MCP")
+	/** Get the MCP server instance (C++ only) */
 	FMcpServer* GetServer() const { return Server.Get(); }
 
 	/** Check if server is running */

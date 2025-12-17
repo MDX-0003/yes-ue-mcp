@@ -28,7 +28,7 @@ struct YESUEMCP_API FMcpToolContext
 	/** Check if cancellation was requested */
 	bool IsCancelled() const
 	{
-		return CancellationToken.IsValid() && CancellationToken->IsSet();
+		return CancellationToken.IsValid() && (*CancellationToken);
 	}
 };
 

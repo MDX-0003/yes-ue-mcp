@@ -66,15 +66,15 @@ FMcpToolResult UAssetSearchTool::Execute(
 	if (!ClassFilter.IsEmpty())
 	{
 		// Try to find the class
-		UClass* FilterClass = FindObject<UClass>(ANY_PACKAGE, *ClassFilter);
+		UClass* FilterClass = FindObject<UClass>(nullptr, *ClassFilter);
 		if (!FilterClass)
 		{
 			// Try with common prefixes
-			FilterClass = FindObject<UClass>(ANY_PACKAGE, *FString::Printf(TEXT("U%s"), *ClassFilter));
+			FilterClass = FindObject<UClass>(nullptr, *FString::Printf(TEXT("U%s"), *ClassFilter));
 		}
 		if (!FilterClass)
 		{
-			FilterClass = FindObject<UClass>(ANY_PACKAGE, *FString::Printf(TEXT("A%s"), *ClassFilter));
+			FilterClass = FindObject<UClass>(nullptr, *FString::Printf(TEXT("A%s"), *ClassFilter));
 		}
 
 		if (FilterClass)
