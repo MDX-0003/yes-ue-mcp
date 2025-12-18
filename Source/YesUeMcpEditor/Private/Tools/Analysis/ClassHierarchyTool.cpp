@@ -53,8 +53,8 @@ FMcpToolResult UClassHierarchyTool::Execute(
 	const FMcpToolContext& Context)
 {
 	// Get class name
-	FString ClassName = GetStringArg(Arguments, TEXT("class_name"), TEXT(""));
-	if (ClassName.IsEmpty())
+	FString ClassName;
+	if (!GetStringArg(Arguments, TEXT("class_name"), ClassName))
 	{
 		return FMcpToolResult::Error(TEXT("Missing required parameter: class_name"));
 	}
