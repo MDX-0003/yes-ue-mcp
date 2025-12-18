@@ -11,6 +11,7 @@
 #include "Tools/Blueprint/BlueprintGraphTool.h"
 #include "Tools/Blueprint/BlueprintNodeTool.h"
 #include "Tools/Blueprint/BlueprintDefaultsTool.h"
+#include "Tools/Level/QueryLevelTool.h"
 #include "Tools/Asset/AssetSearchTool.h"
 
 DEFINE_LOG_CATEGORY(LogYesUeMcpEditor);
@@ -41,6 +42,9 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 	Registry.RegisterToolClass(UBlueprintGraphTool::StaticClass());
 	Registry.RegisterToolClass(UBlueprintNodeTool::StaticClass());
 	Registry.RegisterToolClass(UBlueprintDefaultsTool::StaticClass());
+
+	// Level/World tools
+	Registry.RegisterToolClass(UQueryLevelTool::StaticClass());
 
 	// Asset tools
 	Registry.RegisterToolClass(UAssetSearchTool::StaticClass());
