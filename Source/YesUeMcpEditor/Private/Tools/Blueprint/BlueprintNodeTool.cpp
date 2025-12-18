@@ -42,15 +42,15 @@ FMcpToolResult UBlueprintNodeTool::Execute(
 	const FMcpToolContext& Context)
 {
 	// Get asset path
-	FString AssetPath = GetStringArg(Arguments, TEXT("asset_path"), TEXT(""));
-	if (AssetPath.IsEmpty())
+	FString AssetPath;
+	if (!GetStringArg(Arguments, TEXT("asset_path"), AssetPath))
 	{
 		return FMcpToolResult::Error(TEXT("Missing required parameter: asset_path"));
 	}
 
 	// Get node GUID
-	FString NodeGuidStr = GetStringArg(Arguments, TEXT("node_guid"), TEXT(""));
-	if (NodeGuidStr.IsEmpty())
+	FString NodeGuidStr;
+	if (!GetStringArg(Arguments, TEXT("node_guid"), NodeGuidStr))
 	{
 		return FMcpToolResult::Error(TEXT("Missing required parameter: node_guid"));
 	}

@@ -54,8 +54,8 @@ FMcpToolResult UBlueprintGraphTool::Execute(
 	const FMcpToolContext& Context)
 {
 	// Get asset path
-	FString AssetPath = GetStringArg(Arguments, TEXT("asset_path"), TEXT(""));
-	if (AssetPath.IsEmpty())
+	FString AssetPath;
+	if (!GetStringArg(Arguments, TEXT("asset_path"), AssetPath))
 	{
 		return FMcpToolResult::Error(TEXT("Missing required parameter: asset_path"));
 	}

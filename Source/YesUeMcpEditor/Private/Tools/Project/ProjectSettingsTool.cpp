@@ -141,7 +141,7 @@ TSharedPtr<FJsonObject> UProjectSettingsTool::GetCollisionSettings() const
 		{
 			TSharedPtr<FJsonObject> ProfileJson = MakeShareable(new FJsonObject);
 			ProfileJson->SetStringField(TEXT("name"), ProfileTemplate->Name.ToString());
-			ProfileJson->SetStringField(TEXT("object_type"), UCollisionProfile::Get()->ReturnChannelNameFromContainerIndex(ProfileTemplate->ObjectType));
+			ProfileJson->SetStringField(TEXT("object_type"), UCollisionProfile::Get()->ReturnChannelNameFromContainerIndex(ProfileTemplate->ObjectType).ToString());
 			ProfileJson->SetBoolField(TEXT("can_modify"), ProfileTemplate->bCanModify);
 
 			ProfilesArray.Add(MakeShareable(new FJsonValueObject(ProfileJson)));
@@ -176,7 +176,9 @@ TSharedPtr<FJsonObject> UProjectSettingsTool::GetCollisionSettings() const
 			ChannelsArray.Add(MakeShareable(new FJsonValueObject(ChannelJson)));
 		}
 
-		// Custom channels
+		// Custom channels - Note: DefaultChannelSetups API changed in UE 5.7
+		// Commenting out until proper API is determined
+		/*
 		for (const FCustomChannelSetup& CustomChannel : PhysicsSettings->DefaultChannelSetups)
 		{
 			TSharedPtr<FJsonObject> ChannelJson = MakeShareable(new FJsonObject);
@@ -202,6 +204,7 @@ TSharedPtr<FJsonObject> UProjectSettingsTool::GetCollisionSettings() const
 
 			ChannelsArray.Add(MakeShareable(new FJsonValueObject(ChannelJson)));
 		}
+		*/
 
 		CollisionJson->SetArrayField(TEXT("channels"), ChannelsArray);
 	}
@@ -219,23 +222,22 @@ TSharedPtr<FJsonObject> UProjectSettingsTool::GetGameplayTags() const
 		return TagsJson;
 	}
 
-	// Tag sources
+	// Tag sources - Note: GameplayTagTableList is now FSoftObjectPath in UE 5.7
 	TArray<TSharedPtr<FJsonValue>> SourcesArray;
-	for (const FGameplayTagSource& Source : TagsSettings->GameplayTagTableList)
+	for (const FSoftObjectPath& SourcePath : TagsSettings->GameplayTagTableList)
 	{
 		TSharedPtr<FJsonObject> SourceJson = MakeShareable(new FJsonObject);
-		SourceJson->SetStringField(TEXT("source_name"), Source.SourceName.ToString());
-		SourceJson->SetStringField(TEXT("source_type"), UEnum::GetValueAsString(Source.SourceType));
+		SourceJson->SetStringField(TEXT("source_path"), SourcePath.ToString());
 
 		SourcesArray.Add(MakeShareable(new FJsonValueObject(SourceJson)));
 	}
 	TagsJson->SetArrayField(TEXT("tag_sources"), SourcesArray);
 
-	// Common tags (if any are defined as common)
+	// Common tags (if any are defined as common) - Note: CommonlyReplicatedTags is now FName array in UE 5.7
 	TArray<TSharedPtr<FJsonValue>> CommonTagsArray;
-	for (const FString& CommonTag : TagsSettings->CommonlyReplicatedTags)
+	for (const FName& CommonTag : TagsSettings->CommonlyReplicatedTags)
 	{
-		CommonTagsArray.Add(MakeShareable(new FJsonValueString(CommonTag)));
+		CommonTagsArray.Add(MakeShareable(new FJsonValueString(CommonTag.ToString())));
 	}
 	if (CommonTagsArray.Num() > 0)
 	{
@@ -263,23 +265,30 @@ TSharedPtr<FJsonObject> UProjectSettingsTool::GetDefaultMapsAndModes() const
 	// Default maps
 	MapsJson->SetStringField(TEXT("editor_startup_map"), MapsSettings->EditorStartupMap.GetLongPackageName());
 	MapsJson->SetStringField(TEXT("game_default_map"), MapsSettings->GetGameDefaultMap());
-	MapsJson->SetStringField(TEXT("server_default_map"), MapsSettings->ServerDefaultMap.GetLongPackageName());
-	MapsJson->SetStringField(TEXT("transition_map"), MapsSettings->TransitionMap.GetLongPackageName());
 
-	// Game mode
-	if (MapsSettings->GlobalDefaultGameMode)
-	{
-		MapsJson->SetStringField(TEXT("global_default_game_mode"), MapsSettings->GlobalDefaultGameMode->GetName());
-	}
+	// Note: ServerDefaultMap, TransitionMap, GlobalDefaultGameMode, and GameInstanceClass are private in UE 5.7
+	// Using public getters where available, omitting private fields without public accessors
 
-	// Game instance
-	if (MapsSettings->GameInstanceClass)
-	{
-		MapsJson->SetStringField(TEXT("game_instance_class"), MapsSettings->GameInstanceClass->GetName());
-	}
+	// ServerDefaultMap - no public getter available in UE 5.7
+	// MapsJson->SetStringField(TEXT("server_default_map"), MapsSettings->ServerDefaultMap.GetLongPackageName());
 
-	// Local map options
-	MapsJson->SetStringField(TEXT("local_map_options"), MapsSettings->LocalMapOptions);
+	// TransitionMap - no public getter available in UE 5.7
+	// MapsJson->SetStringField(TEXT("transition_map"), MapsSettings->TransitionMap.GetLongPackageName());
+
+	// GlobalDefaultGameMode - Note: This is now FSoftClassPath in UE 5.7, not a pointer
+	// if (MapsSettings->GlobalDefaultGameMode.IsValid())
+	// {
+	//     MapsJson->SetStringField(TEXT("global_default_game_mode"), MapsSettings->GlobalDefaultGameMode.ToString());
+	// }
+
+	// GameInstanceClass - Note: This is now FSoftClassPath in UE 5.7, not a pointer
+	// if (MapsSettings->GameInstanceClass.IsValid())
+	// {
+	//     MapsJson->SetStringField(TEXT("game_instance_class"), MapsSettings->GameInstanceClass.ToString());
+	// }
+
+	// Local map options - private in UE 5.7
+	// MapsJson->SetStringField(TEXT("local_map_options"), MapsSettings->LocalMapOptions);
 
 	return MapsJson;
 }

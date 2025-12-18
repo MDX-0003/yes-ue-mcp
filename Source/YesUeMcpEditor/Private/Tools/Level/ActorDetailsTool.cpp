@@ -50,8 +50,8 @@ FMcpToolResult UActorDetailsTool::Execute(
 	const FMcpToolContext& Context)
 {
 	// Get actor name
-	FString ActorName = GetStringArg(Arguments, TEXT("actor_name"), TEXT(""));
-	if (ActorName.IsEmpty())
+	FString ActorName;
+	if (!GetStringArg(Arguments, TEXT("actor_name"), ActorName))
 	{
 		return FMcpToolResult::Error(TEXT("Missing required parameter: actor_name"));
 	}

@@ -11,7 +11,11 @@
       "Bash(git commit -m \"$(cat <<''EOF''\nfeat: implement get-blueprint-graph tool\n\nAdd new tool to read complete Blueprint graph structure including all nodes,\nconnections, and pin data.\n\nFeatures:\n- Read event graphs, function graphs, and macro graphs\n- Extract all nodes with GUIDs, classes, and titles\n- Get all pins with types, directions, and default values\n- Track pin connections between nodes\n- Optional node position data\n\nParameters:\n- asset_path (required): Blueprint asset path\n- graph_name (optional): Filter by specific graph name\n- graph_type (optional): Filter by \"event\", \"function\", or \"macro\"\n- include_positions (optional): Include node X/Y coordinates\n\nCloses #2\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(gh issue view:*)",
       "Bash(git commit:*)",
-      "Bash(gh issue close:*)"
+      "Bash(gh issue close:*)",
+      "Bash(git push:*)",
+      "Bash(robocopy:*)",
+      "Bash(xcopy:*)",
+      "Bash(powershell:*)"
     ]
   }
 }
