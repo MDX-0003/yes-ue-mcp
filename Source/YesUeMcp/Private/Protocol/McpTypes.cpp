@@ -27,7 +27,16 @@ TOptional<FMcpRequest> FMcpRequest::FromJson(const TSharedPtr<FJsonObject>& Json
 	}
 
 	// Parse id (optional for notifications)
-	JsonObject->TryGetStringField(TEXT("id"), Request.Id);
+	// JSON-RPC 2.0 allows id to be string, number, or null
+	if (!JsonObject->TryGetStringField(TEXT("id"), Request.Id))
+	{
+		// Try as number
+		double IdNumber;
+		if (JsonObject->TryGetNumberField(TEXT("id"), IdNumber))
+		{
+			Request.Id = FString::Printf(TEXT("%.0f"), IdNumber);
+		}
+	}
 
 	// Parse params (optional)
 	const TSharedPtr<FJsonObject>* ParamsObject;
