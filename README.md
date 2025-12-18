@@ -30,7 +30,7 @@ git clone https://github.com/softdaddy-o/yes-ue-mcp.git
 
 ### Configuration
 
-The plugin starts an HTTP server on `localhost:8080/mcp` by default. Configure in `Config/DefaultYesUeMcp.ini`:
+The plugin starts an HTTP server on `localhost:8080/message` by default. Configure in `Config/DefaultYesUeMcp.ini`:
 
 ```ini
 [/Script/YesUeMcpEditor.McpServerSettings]
@@ -46,12 +46,17 @@ BindAddress=127.0.0.1
 
 ### Client Configuration
 
+**Claude Code CLI**:
+```bash
+claude mcp add --transport http unreal-engine http://localhost:8080/message
+```
+
 **Claude Desktop** (`claude_desktop_config.json`):
 ```json
 {
   "mcpServers": {
     "unreal-engine": {
-      "url": "http://localhost:8080/mcp"
+      "url": "http://localhost:8080/message"
     }
   }
 }
@@ -62,7 +67,7 @@ BindAddress=127.0.0.1
 {
   "mcpServers": {
     "unreal-engine": {
-      "url": "http://localhost:8080/mcp"
+      "url": "http://localhost:8080/message"
     }
   }
 }
@@ -73,39 +78,190 @@ BindAddress=127.0.0.1
 {
   "mcpServers": [{
     "name": "unreal-engine",
-    "transport": { "type": "http", "url": "http://localhost:8080/mcp" }
+    "transport": { "type": "http", "url": "http://localhost:8080/message" }
   }]
 }
 ```
 
-## Available Tools (v1.0 - Read-Only)
+## Available Tools
 
-### Blueprint Analysis
-- `analyze-blueprint` - Complete Blueprint structure analysis
-- `get-blueprint-functions` - List all functions with signatures
-- `get-blueprint-variables` - List variables with types and defaults
-- `get-blueprint-components` - Get component hierarchy
-- `get-blueprint-event-graph` - Detailed event graph node information
-- `find-blueprint-references` - Find where a Blueprint is used
+### Blueprint Analysis (7 tools)
 
-### Asset Management
-- `search-assets` - Search assets by name/type/path
-- `get-asset-references` - Get asset dependency graph
+#### `analyze-blueprint`
+Complete Blueprint structure analysis including parent class, functions, variables, and components.
 
-### Level/Actor Tools
-- `list-level-actors` - List all actors in current level
-- `find-actors-by-class` - Filter actors by class type
-- `get-actor-properties` - Read actor property values
+**Parameters:**
+- `asset_path` (string, required) - Blueprint asset path (e.g., `/Game/Blueprints/BP_Character`)
+
+**Returns:** JSON with complete Blueprint metadata
+
+---
+
+#### `get-blueprint-functions`
+List all functions with signatures, parameters, return types, and metadata.
+
+**Parameters:**
+- `asset_path` (string, required) - Blueprint asset path
+- `function_filter` (string, optional) - Filter by function name (wildcards supported)
+
+**Returns:** Array of function definitions with full signatures
+
+---
+
+#### `get-blueprint-variables`
+List all variables with types, default values, replication settings, and metadata.
+
+**Parameters:**
+- `asset_path` (string, required) - Blueprint asset path
+- `variable_filter` (string, optional) - Filter by variable name (wildcards supported)
+
+**Returns:** Array of variables with types and default values
+
+---
+
+#### `get-blueprint-components`
+Get component hierarchy with transforms and attachment relationships.
+
+**Parameters:**
+- `asset_path` (string, required) - Blueprint asset path
+- `include_transforms` (boolean, optional) - Include component transforms (default: true)
+
+**Returns:** Component tree with hierarchy and transforms
+
+---
+
+#### `get-blueprint-graph`
+Read complete Blueprint graph structure including all nodes, connections, and pin data.
+
+**Parameters:**
+- `asset_path` (string, required) - Blueprint asset path
+- `graph_name` (string, optional) - Specific graph name
+- `graph_type` (string, optional) - Filter: `event`, `function`, or `macro`
+- `include_positions` (boolean, optional) - Include node X/Y positions (default: false)
+
+**Returns:** All graphs with nodes, pins, and connections
+
+---
+
+#### `get-blueprint-node`
+Get detailed information about a specific Blueprint node by GUID.
+
+**Parameters:**
+- `asset_path` (string, required) - Blueprint asset path
+- `node_guid` (string, required) - Node GUID to inspect
+
+**Returns:** Full node details with pins and connections
+
+---
+
+#### `get-blueprint-defaults`
+Read CDO (Class Default Object) property values from Blueprint.
+
+**Parameters:**
+- `asset_path` (string, required) - Blueprint asset path
+- `property_filter` (string, optional) - Filter by property name (wildcards supported)
+- `category_filter` (string, optional) - Filter by property category
+
+**Returns:** All property defaults with types, categories, and flags
+
+---
+
+### Level/World Tools (2 tools)
+
+#### `query-level`
+List actors in the currently open level with filtering options.
+
+**Parameters:**
+- `class_filter` (string, optional) - Filter by actor class (wildcards supported)
+- `folder_filter` (string, optional) - Filter by World Outliner folder path
+- `tag_filter` (string, optional) - Filter by actor tag
+- `include_hidden` (boolean, optional) - Include hidden actors (default: false)
+- `include_components` (boolean, optional) - Include component list (default: false)
+- `include_transform` (boolean, optional) - Include transforms (default: true)
+- `limit` (integer, optional) - Max results (default: 100)
+
+**Returns:** Array of actors with optional transforms and components
+
+---
+
+#### `get-actor-details`
+Deep inspection of a specific actor in the level.
+
+**Parameters:**
+- `actor_name` (string, required) - Actor name or label to inspect
+- `include_properties` (boolean, optional) - Include all properties (default: true)
+- `include_components` (boolean, optional) - Include component details (default: true)
+
+**Returns:** Complete actor details with properties and component hierarchy
+
+---
+
+### Project Configuration (1 tool)
+
+#### `get-project-settings`
+Query project configuration settings.
+
+**Parameters:**
+- `section` (string, optional) - Section to query: `input`, `collision`, `tags`, `maps`, or `all` (default: `all`)
+
+**Returns:** JSON with requested configuration sections:
+- **input**: Action/axis mappings with keys and modifiers
+- **collision**: Profiles, channels, and responses
+- **tags**: Gameplay tag sources and settings
+- **maps**: Default maps and game modes
+
+---
+
+### Analysis Tools (2 tools)
+
+#### `get-class-hierarchy`
+Browse class inheritance tree showing parents and children.
+
+**Parameters:**
+- `class_name` (string, required) - Class to inspect (e.g., `AActor`, `UActorComponent`)
+- `direction` (string, optional) - `parents`, `children`, or `both` (default: `both`)
+- `include_blueprints` (boolean, optional) - Include Blueprint subclasses (default: true)
+- `depth` (integer, optional) - Max inheritance depth (default: 10)
+
+**Returns:** Class hierarchy with parent chain and child classes
+
+---
+
+#### `inspect-data-asset`
+Read DataTable and DataAsset contents.
+
+**Parameters:**
+- `asset_path` (string, required) - DataTable or DataAsset path
+- `row_filter` (string, optional) - Filter rows by name (wildcards supported, DataTable only)
+
+**Returns:**
+- **DataTable**: All rows with field data
+- **DataAsset**: All properties with values
+
+---
+
+### Asset Management (1 tool)
+
+#### `search-assets`
+Search assets by name, class, or path with wildcard support.
+
+**Parameters:**
+- `pattern` (string, optional) - Search pattern (wildcards supported)
+- `class_filter` (string, optional) - Filter by asset class
+- `path_filter` (string, optional) - Filter by asset path
+- `limit` (integer, optional) - Max results (default: 100)
+
+**Returns:** Array of matching assets with paths and types
 
 ## Architecture
 
 ```
-┌──────────────────┐  HTTP POST   ┌─────────────────────────────┐
-│  Claude / Cursor │ ──────────►  │  UE Editor                  │
-│  Windsurf / etc  │  JSON-RPC    │  └─ YesUeMcp Plugin         │
-│                  │ ◄──────────  │     └─ FHttpServerModule    │
-│                  │   Response   │        (localhost:8080/mcp) │
-└──────────────────┘              └─────────────────────────────┘
+┌──────────────────┐  HTTP POST   ┌──────────────────────────────┐
+│  Claude / Cursor │ ──────────►  │  UE Editor                   │
+│  Windsurf / etc  │  JSON-RPC    │  └─ YesUeMcp Plugin          │
+│                  │ ◄──────────  │     └─ FHttpServerModule     │
+│                  │   Response   │        (localhost:8080/message)│
+└──────────────────┘              └──────────────────────────────┘
 ```
 
 **Modules:**
