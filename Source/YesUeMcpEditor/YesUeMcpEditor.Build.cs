@@ -53,7 +53,11 @@ public class YesUeMcpEditor : ModuleRules
 			"JsonUtilities",
 
 			// Input
-			"InputCore"
+			"InputCore",
+
+			// Project Settings
+			"GameplayTags",
+			"EngineSettings"
 		});
 	}
 }
