@@ -15,6 +15,7 @@
 #include "Tools/Level/ActorDetailsTool.h"
 #include "Tools/Project/ProjectSettingsTool.h"
 #include "Tools/Analysis/ClassHierarchyTool.h"
+#include "Tools/Data/DataAssetTool.h"
 #include "Tools/Asset/AssetSearchTool.h"
 
 DEFINE_LOG_CATEGORY(LogYesUeMcpEditor);
@@ -55,6 +56,9 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 
 	// Analysis tools
 	Registry.RegisterToolClass(UClassHierarchyTool::StaticClass());
+
+	// Data tools
+	Registry.RegisterToolClass(UDataAssetTool::StaticClass());
 
 	// Asset tools
 	Registry.RegisterToolClass(UAssetSearchTool::StaticClass());
