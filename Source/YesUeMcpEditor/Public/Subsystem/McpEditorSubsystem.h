@@ -4,9 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "EditorSubsystem.h"
+#include "Server/McpServer.h"
 #include "McpEditorSubsystem.generated.h"
-
-class FMcpServer;
 
 /**
  * Settings for MCP Server

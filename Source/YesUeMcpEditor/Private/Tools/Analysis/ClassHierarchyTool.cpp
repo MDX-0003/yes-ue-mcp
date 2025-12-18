@@ -180,7 +180,7 @@ TArray<UClass*> UClassHierarchyTool::GetChildClasses(UClass* Class, bool bInclud
 		if (DerivedClass->GetSuperClass() == Class)
 		{
 			// Check if it's a Blueprint class
-			bool bIsBlueprint = DerivedClass->IsA<UBlueprintGeneratedClass>();
+			bool bIsBlueprint = DerivedClass->IsA(UBlueprintGeneratedClass::StaticClass());
 
 			if (bIncludeBlueprints || !bIsBlueprint)
 			{
@@ -205,7 +205,7 @@ TSharedPtr<FJsonObject> UClassHierarchyTool::ClassToJson(UClass* Class) const
 	ClassJson->SetStringField(TEXT("path_name"), Class->GetPathName());
 
 	// Check if Blueprint class
-	bool bIsBlueprint = Class->IsA<UBlueprintGeneratedClass>();
+	bool bIsBlueprint = Class->IsA(UBlueprintGeneratedClass::StaticClass());
 	ClassJson->SetBoolField(TEXT("is_blueprint"), bIsBlueprint);
 
 	if (bIsBlueprint)
