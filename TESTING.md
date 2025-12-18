@@ -5,8 +5,8 @@ This guide provides testing instructions for all implemented MCP tools.
 ## Prerequisites
 
 1. **Unreal Engine 5.7+** with the yes-ue-mcp plugin installed
-2. **Test Project**: Elpis (or your own UE project)
-   - Project Path: `F:\src3\Covenant\ElpisClient\`
+2. **Test Project**: GameAnimationSample57 (or your own UE project)
+   - Project Path: `F:\src_ue5\GameAnimationSample57\`
 3. **MCP Client**: Claude Code, Claude Desktop, Cursor, or another MCP-compatible client
 4. **Editor Running**: Start Unreal Editor with your test project
 
