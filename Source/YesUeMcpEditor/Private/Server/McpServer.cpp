@@ -181,7 +181,9 @@ bool FMcpServer::HandleMcpRequest(const FHttpServerRequest& Request, const FHttp
 	FString Body;
 	if (Request.Body.Num() > 0)
 	{
-		Body = FString(UTF8_TO_TCHAR(reinterpret_cast<const char*>(Request.Body.GetData())));
+		// Convert binary data to string with explicit length to avoid reading garbage bytes
+		FUTF8ToTCHAR Convert(reinterpret_cast<const ANSICHAR*>(Request.Body.GetData()), Request.Body.Num());
+		Body = FString(Convert.Length(), Convert.Get());
 	}
 
 	if (Body.IsEmpty())
