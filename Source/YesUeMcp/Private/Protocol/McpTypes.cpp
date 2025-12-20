@@ -128,11 +128,11 @@ FMcpResponse FMcpResponse::Error(const FString& InId, int32 Code, const FString&
 	Response.Result = nullptr;
 
 	Response.ErrorData = MakeShareable(new FJsonObject);
-	Response.Error->SetNumberField(TEXT("code"), Code);
-	Response.Error->SetStringField(TEXT("message"), Message);
+	Response.ErrorData->SetNumberField(TEXT("code"), Code);
+	Response.ErrorData->SetStringField(TEXT("message"), Message);
 	if (Data.IsValid())
 	{
-		Response.Error->SetObjectField(TEXT("data"), Data);
+		Response.ErrorData->SetObjectField(TEXT("data"), Data);
 	}
 
 	return Response;

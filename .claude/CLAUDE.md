@@ -15,18 +15,16 @@ This plugin implements the Model Context Protocol (MCP) over HTTP, allowing AI a
 
 ## Testing Environment
 
-**Primary Test Project:** GameAnimationSample57 (UE 5.7)
-- **Project Path:** `F:\src_ue5\GameAnimationSample57\`
-- **Plugin Install Path:** `F:\src_ue5\GameAnimationSample57\Plugins\yes-ue-mcp\`
-- **Version Control:** Git
-- **MCP Endpoint:** `http://127.0.0.1:8080/message`
-- **Status:** 🔄 Setup in progress
-
-**Secondary Test Project:** Elpis (Action RPG - UE 5.7)
+**Primary Test Project:** Elpis (Action RPG - UE 5.7)
 - **Project Path:** `F:\src3\Covenant\ElpisClient\`
 - **Plugin Install Path:** `F:\src3\Covenant\ElpisClient\Plugins\yes-ue-mcp\`
 - **Version Control:** Perforce (plugin excluded via `.p4ignore`)
-- **Status:** ✅ All 5 initial tools tested and working
+- **MCP Endpoint:** `http://127.0.0.1:8080/message`
+- **Status:** ✅ Primary test environment - all tools tested here
+
+**Secondary Test Project:** GameAnimationSample57 (UE 5.7)
+- **Project Path:** `F:\src_ue5\GameAnimationSample57\`
+- **Status:** ❌ Not ready for testing
 
 ## Git Workflow
 

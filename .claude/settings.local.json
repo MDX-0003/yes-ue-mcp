@@ -15,7 +15,14 @@
       "Bash(git push:*)",
       "Bash(robocopy:*)",
       "Bash(xcopy:*)",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(dir /s /b \"C:\\\\Users\\\\muscly\\\\.claude\")",
+      "Bash(dir /s /b \"C:\\\\Users\\\\muscly\\\\.claude\\\\commands\")",
+      "Bash(dir /s /b \"C:\\\\Users\\\\muscly\\\\.claude\\\\config\")",
+      "Bash(dir /s /b \"C:\\\\Users\\\\muscly\\\\.claude\\\\skills\")",
+      "Bash(cat:*)",
+      "Bash(dir \"C:\\\\Users\\\\muscly\\\\.claude\\\\skills\\\\english-feedback\")",
+      "Bash(dir:*)"
     ]
   }
 }

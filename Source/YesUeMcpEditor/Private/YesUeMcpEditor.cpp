@@ -11,6 +11,8 @@
 #include "Tools/Blueprint/BlueprintGraphTool.h"
 #include "Tools/Blueprint/BlueprintNodeTool.h"
 #include "Tools/Blueprint/BlueprintDefaultsTool.h"
+#include "Tools/Blueprint/BlueprintCallableListTool.h"
+#include "Tools/Blueprint/CallableDetailsTool.h"
 #include "Tools/Level/QueryLevelTool.h"
 #include "Tools/Level/ActorDetailsTool.h"
 #include "Tools/Project/ProjectSettingsTool.h"
@@ -46,6 +48,8 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 	Registry.RegisterToolClass(UBlueprintGraphTool::StaticClass());
 	Registry.RegisterToolClass(UBlueprintNodeTool::StaticClass());
 	Registry.RegisterToolClass(UBlueprintDefaultsTool::StaticClass());
+	Registry.RegisterToolClass(UBlueprintCallableListTool::StaticClass());
+	Registry.RegisterToolClass(UCallableDetailsTool::StaticClass());
 
 	// Level/World tools
 	Registry.RegisterToolClass(UQueryLevelTool::StaticClass());

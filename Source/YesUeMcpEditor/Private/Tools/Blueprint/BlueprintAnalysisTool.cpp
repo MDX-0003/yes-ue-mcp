@@ -212,10 +212,11 @@ TSharedPtr<FJsonObject> UBlueprintAnalysisTool::ExtractVariables(UBlueprint* Blu
 		VarObj->SetBoolField(TEXT("is_map"), Var.VarType.IsMap());
 
 		// Replication
-		if (Var.HasMetaData(FBlueprintMetadata::MD_RepNotifyFunc))
+		// Note: MD_RepNotifyFunc was removed in UE 5.7
+		if (Var.RepNotifyFunc != NAME_None)
 		{
 			VarObj->SetStringField(TEXT("replication"), TEXT("ReplicatedUsing"));
-			VarObj->SetStringField(TEXT("rep_notify_func"), Var.GetMetaData(FBlueprintMetadata::MD_RepNotifyFunc));
+			VarObj->SetStringField(TEXT("rep_notify_func"), Var.RepNotifyFunc.ToString());
 		}
 		else if (Var.PropertyFlags & CPF_Net)
 		{

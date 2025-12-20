@@ -120,9 +120,11 @@ FMcpToolResult UBlueprintVariablesTool::Execute(
 				ReplicationObj->SetStringField(TEXT("condition"), ConditionStr);
 			}
 
-			if (Var.HasMetaData(FBlueprintMetadata::MD_RepNotifyFunc))
+			// Note: MD_RepNotifyFunc was removed in UE 5.7
+			// RepNotify function name can be retrieved from RepNotifyFunc property if needed
+			if (Var.RepNotifyFunc != NAME_None)
 			{
-				ReplicationObj->SetStringField(TEXT("notify_func"), Var.GetMetaData(FBlueprintMetadata::MD_RepNotifyFunc));
+				ReplicationObj->SetStringField(TEXT("notify_func"), Var.RepNotifyFunc.ToString());
 			}
 		}
 		else
