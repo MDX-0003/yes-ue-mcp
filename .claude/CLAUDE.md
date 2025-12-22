@@ -1,6 +1,6 @@
 # yes-ue-mcp - Claude Instructions
 
-**Native C++ MCP Plugin for Unreal Engine 5.7+**
+**Native C++ MCP Plugin for Unreal Engine 5.6+**
 
 ## Project Overview
 
@@ -13,6 +13,50 @@ This plugin implements the Model Context Protocol (MCP) over HTTP, allowing AI a
 | `origin` | https://github.com/softdaddy-o/yes-ue-mcp-private.git | Development (private) |
 | `public` | https://github.com/softdaddy-o/yes-ue-mcp.git | Release (public) |
 
+## Workflow Rules
+
+### Issue-Driven Development
+- **Every task MUST have a GitHub issue** - Create an issue before starting any task
+- **Close the issue** when the task is complete with a commit referencing it (e.g., `Closes #123`)
+- Use conventional commit format: `feat:`, `fix:`, `docs:`, `refactor:`
+
+### Git Workflow
+
+**Private Repository (origin)**
+- Commit frequently - whenever one issue/task is finished
+- Each commit should reference its issue number
+- Push to `origin` for development work
+
+```bash
+git add -A && git commit -m "feat: add new tool
+
+Closes #123"
+git push origin main
+```
+
+**Public Repository (public)**
+- Push aggregated changes only when a new version is ready
+- Use version tags (v1.0.0, v1.1.0, etc.)
+- Filter out `.claude/` directory when pushing to public
+
+```bash
+# Push to public with .claude/ filtered out
+git push public main --force-with-lease
+git tag v1.0.0
+git push public --tags
+```
+
+**Publishing to Public Repo**
+When pushing to the public repository, use git filter to exclude private files:
+```bash
+# Create a filtered branch for public release
+git checkout -b release-temp
+git filter-branch --tree-filter 'rm -rf .claude' HEAD
+git push public release-temp:main --force
+git checkout main
+git branch -D release-temp
+```
+
 ## Testing Environment
 
 **Primary Test Project:** Elpis (Action RPG - UE 5.7)
@@ -20,36 +64,13 @@ This plugin implements the Model Context Protocol (MCP) over HTTP, allowing AI a
 - **Plugin Install Path:** `F:\src3\Covenant\ElpisClient\Plugins\yes-ue-mcp\`
 - **Version Control:** Perforce (plugin excluded via `.p4ignore`)
 - **MCP Endpoint:** `http://127.0.0.1:8080/message`
-- **Status:** ✅ Primary test environment - all tools tested here
+- **Status:** Primary test environment
 
 **Secondary Test Project:** GameAnimationSample56 (UE 5.6)
 - **Project Path:** `F:\src_ue5\GameAnimationSample56\`
 - **Plugin Install Path:** `F:\src_ue5\GameAnimationSample56\Plugins\yes-ue-mcp\`
 - **MCP Endpoint:** `http://127.0.0.1:8081/message`
-- **Status:** ✅ Active test environment for UE 5.6
-
-## Git Workflow
-
-### Private Repository (origin)
-- **Commit frequently** - whenever one issue/task is finished
-- Use descriptive commit messages
-- Push to `origin` for development work
-
-```bash
-git add -A && git commit -m "feat: add blueprint analysis tool"
-git push origin main
-```
-
-### Public Repository (public)
-- **Commit aggregated changes** - only when a new version is finished
-- Use version tags (v1.0.0, v1.1.0, etc.)
-- Push to `public` for releases
-
-```bash
-git push public main
-git tag v1.0.0
-git push public --tags
-```
+- **Status:** Active test environment for UE 5.6
 
 ## Module Structure
 
@@ -70,107 +91,52 @@ git push public --tags
 - `Source/YesUeMcpEditor/Public/Server/McpServer.h` - HTTP server
 - `Source/YesUeMcpEditor/Public/Subsystem/McpEditorSubsystem.h` - Lifecycle management
 
-## Project History
+## MCP Server
 
-### v0.1.0 - Initial Implementation (Dec 2024)
-
-**Commit 4950dce:** Initial commit
-- Project structure and build system
-
-**Commit 2c9a428:** feat: initial implementation of yes-ue-mcp plugin
-- MCP protocol server using Unreal's HTTP server module
-- Tool registry system with lazy instantiation
-- Initial 5 tools implemented:
-  - `search-assets` - Search by name/class/path with wildcards
-  - `analyze-blueprint` - Complete blueprint analysis
-  - `get-blueprint-functions` - Function signatures and metadata
-  - `get-blueprint-variables` - Variable details with replication info
-  - `get-blueprint-components` - Component hierarchy with transforms
-
-**Commit 6173f5a:** fix: UE 5.7 compilation errors
-- Fixed deprecated `FBlueprintMetadata::MD_RepNotifyFunc` API
-- Updated HTTP Headers from `TMap<FString, FString>` to `TMap<FString, TArray<FString>>`
-- Fixed camera animation include paths
-- Resolved TUniquePtr forward declaration issues
-- Fixed `Response.Error` → `Response.ErrorData` field name
-
-**Commit 4397724:** fix: change MCP endpoint from /mcp to /message
-- Changed route from `/mcp` to `/message` for Claude Code compatibility
-- Added comprehensive request/response logging
-- Implemented GET health check endpoint (was returning 501 error)
-- Fixed CORS headers with proper array syntax
-
-### Testing Results (Elpis Project)
-
-✅ **Server Startup**
-- MCP server starts automatically with Unreal Editor
-- Binds to `http://127.0.0.1:8080/message`
-- Health check accessible via GET request
-
-✅ **Claude Code Integration**
-- Successfully added with: `claude mcp add --transport http unreal-elpis http://127.0.0.1:8080/message`
-- Connection verified with `claude mcp list`
-- All tools discoverable via `tools/list`
-
-✅ **Tool Functionality**
-- Searched 13 CBP character blueprints successfully
-- Analyzed CBP_PC_Base component hierarchy (24 components)
-- Retrieved function/variable details from blueprints
-- Wildcard pattern matching working correctly
-
-## Current Features
-
-### MCP Server
 - **Protocol:** MCP 2024-11-05 with JSON-RPC 2.0
 - **Transport:** HTTP (Streamable HTTP ready)
 - **Endpoint:** `/message`
 - **Port:** 8080 (configurable)
 - **CORS:** Enabled for cross-origin requests
 
-### Available Tools (5 total)
+## Available Tools (15 total)
 
-| Tool | Description | Status |
-|------|-------------|--------|
-| `search-assets` | Search assets by pattern, class, or path | ✅ Tested |
-| `analyze-blueprint` | Complete blueprint structure analysis | ✅ Tested |
-| `get-blueprint-functions` | Function signatures and metadata | ✅ Tested |
-| `get-blueprint-variables` | Variable types and properties | ✅ Tested |
-| `get-blueprint-components` | Component hierarchy with transforms | ✅ Tested |
+### Asset Tools
+| Tool | Description |
+|------|-------------|
+| `search-assets` | Search assets by pattern, class, or path with wildcards |
+
+### Blueprint Tools
+| Tool | Description |
+|------|-------------|
+| `analyze-blueprint` | Complete blueprint structure analysis |
+| `get-blueprint-functions` | Function signatures and metadata |
+| `get-blueprint-variables` | Variable types and properties |
+| `get-blueprint-components` | Component hierarchy with transforms |
+| `get-blueprint-graph` | Read complete graph structure (nodes, pins, connections) |
+| `get-blueprint-node` | Get detailed info about a specific node by GUID |
+| `get-blueprint-defaults` | Read CDO property values (supports `include_inherited`) |
+| `list-blueprint-callables` | List all events, functions, macros with metadata |
+| `get-callable-details` | Get full graph for a specific callable |
+
+### Level Tools
+| Tool | Description |
+|------|-------------|
+| `query-level` | List actors in currently open level with filtering |
+| `get-actor-details` | Inspect specific actor properties and components |
+
+### Project Tools
+| Tool | Description |
+|------|-------------|
+| `get-project-settings` | Query input, collision, tags, and map settings |
+| `get-class-hierarchy` | Browse class inheritance (parents/children) |
+| `inspect-data-asset` | Read DataTable and DataAsset contents |
 
 ## Future Work
 
-### Planned Tools (Priority Order)
+See GitHub Issues for planned features and enhancements.
 
-#### Phase 1: Level/World Tools (High Priority)
-1. **`query-level`** - List actors in currently open level
-   - Filter by class, folder, tags
-   - Actor names, classes, transforms, components
-   - Essential for level understanding
-
-2. **`get-actor-details`** - Inspect specific actor
-   - Deep property inspection via reflection
-   - Component details with properties
-   - Actor references
-
-#### Phase 2: Project Configuration (High Priority)
-3. **`get-project-settings`** - Query project configuration
-   - Input mappings (actions/axes)
-   - Collision profiles and channels
-   - Gameplay tags hierarchy
-   - Default maps and game modes
-
-#### Phase 3: Analysis Tools (Medium Priority)
-4. **`get-class-hierarchy`** - Browse class inheritance
-   - Parent chain to UObject
-   - Subclasses (C++ and Blueprint)
-   - Interfaces and reflection data
-
-5. **`inspect-data-asset`** - DataTable/DataAsset reader
-   - Row structure for DataTables
-   - Property values for DataAssets
-   - Support CurveTable, CompositeDataTable
-
-### Advanced Features (Future Consideration)
+### Potential Additions
 - Animation asset query (AnimBP, montages, notifies)
 - Material/shader graph inspection
 - AI behavior tree analysis
@@ -185,11 +151,8 @@ git push public --tags
 2. **Editor-only** - Cannot run in packaged game
 3. **Single session** - No multi-client support
 4. **No streaming** - Synchronous responses only
-5. **Blueprint focus** - No C++ class introspection yet
 
-## Development Notes
+## Project History
 
-- Plugin source is separate from test project deployment
-- Changes tested in Elpis project before committing
-- Git commits use conventional commit format (feat/fix/docs/refactor)
-- Private repo for development, public repo for releases
+Historical development notes have been migrated to GitHub Issues for reference.
+See: https://github.com/softdaddy-o/yes-ue-mcp-private/issues?q=label%3Adocumentation
