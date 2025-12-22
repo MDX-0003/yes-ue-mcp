@@ -2,7 +2,9 @@
 
 #include "Tools/Project/ProjectInfoTool.h"
 #include "Misc/Paths.h"
-#include "Interfaces/IPluginManager.h"
+
+// Plugin version - keep in sync with YesUeMcp.uplugin
+#define YESUEMCP_VERSION TEXT("1.0.0")
 
 FString UProjectInfoTool::GetToolDescription() const
 {
@@ -42,24 +44,8 @@ FMcpToolResult UProjectInfoTool::Execute(
 	// Plugin information
 	TSharedPtr<FJsonObject> PluginInfo = MakeShareable(new FJsonObject);
 	PluginInfo->SetStringField(TEXT("name"), TEXT("YesUeMcp"));
-	PluginInfo->SetStringField(TEXT("version"), GetPluginVersion());
+	PluginInfo->SetStringField(TEXT("version"), YESUEMCP_VERSION);
 	Result->SetObjectField(TEXT("plugin"), PluginInfo);
 
 	return FMcpToolResult::Json(Result);
-}
-
-FString UProjectInfoTool::GetPluginVersion() const
-{
-	// Try to get version from plugin manager
-	IPluginManager& PluginManager = IPluginManager::Get();
-	TSharedPtr<IPlugin> Plugin = PluginManager.FindPlugin(TEXT("YesUeMcp"));
-
-	if (Plugin.IsValid())
-	{
-		const FPluginDescriptor& Descriptor = Plugin->GetDescriptor();
-		return Descriptor.VersionName;
-	}
-
-	// Fallback version
-	return TEXT("1.0.0");
 }

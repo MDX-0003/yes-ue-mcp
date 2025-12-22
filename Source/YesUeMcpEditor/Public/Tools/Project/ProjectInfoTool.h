@@ -24,8 +24,4 @@ public:
 	virtual FMcpToolResult Execute(
 		const TSharedPtr<FJsonObject>& Arguments,
 		const FMcpToolContext& Context) override;
-
-private:
-	/** Get the plugin version from YesUeMcp.uplugin */
-	FString GetPluginVersion() const;
 };
