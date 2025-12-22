@@ -33,6 +33,12 @@ TMap<FString, FMcpSchemaProperty> UBlueprintDefaultsTool::GetInputSchema() const
 	CategoryFilter.bRequired = false;
 	Schema.Add(TEXT("category_filter"), CategoryFilter);
 
+	FMcpSchemaProperty IncludeInherited;
+	IncludeInherited.Type = TEXT("boolean");
+	IncludeInherited.Description = TEXT("Include inherited properties from parent classes (default: false)");
+	IncludeInherited.bRequired = false;
+	Schema.Add(TEXT("include_inherited"), IncludeInherited);
+
 	return Schema;
 }
 
@@ -55,6 +61,7 @@ FMcpToolResult UBlueprintDefaultsTool::Execute(
 	// Optional filters
 	FString PropertyFilter = GetStringArgOrDefault(Arguments, TEXT("property_filter"), TEXT(""));
 	FString CategoryFilter = GetStringArgOrDefault(Arguments, TEXT("category_filter"), TEXT(""));
+	bool bIncludeInherited = GetBoolArgOrDefault(Arguments, TEXT("include_inherited"), false);
 
 	// Load Blueprint
 	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
@@ -85,7 +92,10 @@ FMcpToolResult UBlueprintDefaultsTool::Execute(
 
 	// Iterate properties
 	TArray<TSharedPtr<FJsonValue>> PropertiesArray;
-	for (TFieldIterator<FProperty> PropIt(GenClass, EFieldIteratorFlags::ExcludeSuper); PropIt; ++PropIt)
+	EFieldIteratorFlags::SuperClassFlags SuperFlags = bIncludeInherited
+		? EFieldIteratorFlags::IncludeSuper
+		: EFieldIteratorFlags::ExcludeSuper;
+	for (TFieldIterator<FProperty> PropIt(GenClass, SuperFlags); PropIt; ++PropIt)
 	{
 		FProperty* Property = *PropIt;
 		if (!Property)
