@@ -19,6 +19,7 @@
 #include "Tools/Analysis/ClassHierarchyTool.h"
 #include "Tools/Data/DataAssetTool.h"
 #include "Tools/Asset/AssetSearchTool.h"
+#include "Tools/Asset/InspectAssetTool.h"
 
 DEFINE_LOG_CATEGORY(LogYesUeMcpEditor);
 
@@ -66,6 +67,7 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 
 	// Asset tools
 	Registry.RegisterToolClass(UAssetSearchTool::StaticClass());
+	Registry.RegisterToolClass(UInspectAssetTool::StaticClass());
 
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("Registered %d MCP tools"), Registry.GetToolCount());
 }

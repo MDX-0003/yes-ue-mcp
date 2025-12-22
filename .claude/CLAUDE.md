@@ -99,12 +99,13 @@ git branch -D release-temp
 - **Port:** 8080 (configurable)
 - **CORS:** Enabled for cross-origin requests
 
-## Available Tools (15 total)
+## Available Tools (16 total)
 
 ### Asset Tools
 | Tool | Description |
 |------|-------------|
 | `search-assets` | Search assets by pattern, class, or path with wildcards |
+| `inspect-asset` | General-purpose asset inspection using UE reflection (any asset type) |
 
 ### Blueprint Tools
 | Tool | Description |
