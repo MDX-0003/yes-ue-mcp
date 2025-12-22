@@ -22,9 +22,11 @@ This plugin implements the Model Context Protocol (MCP) over HTTP, allowing AI a
 - **MCP Endpoint:** `http://127.0.0.1:8080/message`
 - **Status:** ✅ Primary test environment - all tools tested here
 
-**Secondary Test Project:** GameAnimationSample57 (UE 5.7)
-- **Project Path:** `F:\src_ue5\GameAnimationSample57\`
-- **Status:** ❌ Not ready for testing
+**Secondary Test Project:** GameAnimationSample56 (UE 5.6)
+- **Project Path:** `F:\src_ue5\GameAnimationSample56\`
+- **Plugin Install Path:** `F:\src_ue5\GameAnimationSample56\Plugins\yes-ue-mcp\`
+- **MCP Endpoint:** `http://127.0.0.1:8081/message`
+- **Status:** ✅ Active test environment for UE 5.6
 
 ## Git Workflow
 

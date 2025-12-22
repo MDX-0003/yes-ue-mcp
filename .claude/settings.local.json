@@ -1,4 +1,5 @@
 {
+  "enabledMcpjsonServers": ["unreal-elpis"],
   "permissions": {
     "allow": [
       "Bash(claude mcp list:*)",
@@ -22,7 +23,10 @@
       "Bash(dir /s /b \"C:\\\\Users\\\\muscly\\\\.claude\\\\skills\")",
       "Bash(cat:*)",
       "Bash(dir \"C:\\\\Users\\\\muscly\\\\.claude\\\\skills\\\\english-feedback\")",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(test:*)",
+      "Bash(tasklist:*)",
+      "Bash(\"C:\\\\Program Files\\\\Epic Games\\\\UE_5.7\\\\Engine\\\\Build\\\\BatchFiles\\\\Build.bat\" ElpisClientEditor Win64 Development -Project=\"F:\\\\src3\\\\Covenant\\\\ElpisClient\\\\ElpisClient.uproject\" -Plugin=\"F:\\\\src3\\\\Covenant\\\\ElpisClient\\\\Plugins\\\\yes-ue-mcp\\\\YesUeMcp.uplugin\" -TargetType=Editor)"
     ]
   }
 }
