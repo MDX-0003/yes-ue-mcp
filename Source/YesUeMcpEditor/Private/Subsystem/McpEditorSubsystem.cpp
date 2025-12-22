@@ -3,6 +3,10 @@
 #include "Subsystem/McpEditorSubsystem.h"
 #include "Server/McpServer.h"
 #include "YesUeMcpEditor.h"
+#include "Framework/Notifications/NotificationManager.h"
+#include "Widgets/Notifications/SNotificationList.h"
+
+#define LOCTEXT_NAMESPACE "YesUeMcp"
 
 void UMcpEditorSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -36,10 +40,12 @@ void UMcpEditorSubsystem::LoadConfiguration()
 {
 	Settings = GetMutableDefault<UMcpServerSettings>();
 
-	UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP Settings - Port: %d, AutoStart: %s, BindAddress: %s"),
+	UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP Settings - Port: %d, AutoStart: %s, BindAddress: %s, PortFallback: %s (max %d)"),
 		Settings->ServerPort,
 		Settings->bAutoStartServer ? TEXT("true") : TEXT("false"),
-		*Settings->BindAddress);
+		*Settings->BindAddress,
+		Settings->bEnablePortFallback ? TEXT("enabled") : TEXT("disabled"),
+		Settings->MaxPortRetries);
 }
 
 bool UMcpEditorSubsystem::IsServerRunning() const
@@ -60,21 +66,64 @@ bool UMcpEditorSubsystem::StartServer()
 		return true;
 	}
 
-	int32 Port = Settings ? Settings->ServerPort : 8080;
-	FString BindAddress = Settings ? Settings->BindAddress : TEXT("127.0.0.1");
+	const int32 ConfiguredPort = Settings ? Settings->ServerPort : 8080;
+	const FString BindAddress = Settings ? Settings->BindAddress : TEXT("127.0.0.1");
+	const bool bEnableFallback = Settings ? Settings->bEnablePortFallback : true;
+	const int32 MaxRetries = Settings ? Settings->MaxPortRetries : 10;
+	const bool bNotifyFallback = Settings ? Settings->bNotifyOnPortFallback : true;
 
-	bool bSuccess = Server->Start(Port, BindAddress);
+	// Reset fallback state
+	bUsedFallbackPort = false;
+	ActualBoundPort = 0;
 
-	if (bSuccess)
+	// Try ports starting from configured port
+	int32 PortToTry = ConfiguredPort;
+	const int32 MaxAttempts = bEnableFallback ? MaxRetries : 1;
+
+	for (int32 Attempt = 0; Attempt < MaxAttempts; ++Attempt)
 	{
-		UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP Server started successfully on port %d"), Port);
-	}
-	else
-	{
-		UE_LOG(LogYesUeMcpEditor, Error, TEXT("Failed to start MCP Server on port %d"), Port);
+		// Ensure port is valid
+		if (PortToTry > 65535)
+		{
+			UE_LOG(LogYesUeMcpEditor, Error, TEXT("Port fallback exceeded valid port range"));
+			break;
+		}
+
+		UE_LOG(LogYesUeMcpEditor, Log, TEXT("Attempting to start MCP Server on port %d (attempt %d/%d)"),
+			PortToTry, Attempt + 1, MaxAttempts);
+
+		if (Server->Start(PortToTry, BindAddress))
+		{
+			ActualBoundPort = PortToTry;
+			bUsedFallbackPort = (PortToTry != ConfiguredPort);
+
+			if (bUsedFallbackPort)
+			{
+				UE_LOG(LogYesUeMcpEditor, Warning,
+					TEXT("MCP Server started on fallback port %d (configured port %d was unavailable)"),
+					ActualBoundPort, ConfiguredPort);
+
+				if (bNotifyFallback)
+				{
+					ShowPortFallbackNotification(ConfiguredPort, ActualBoundPort);
+				}
+			}
+			else
+			{
+				UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP Server started successfully on port %d"), ActualBoundPort);
+			}
+
+			return true;
+		}
+
+		PortToTry = ConfiguredPort + Attempt + 1;
 	}
 
-	return bSuccess;
+	UE_LOG(LogYesUeMcpEditor, Error,
+		TEXT("Failed to start MCP Server. Tried ports %d-%d, all unavailable."),
+		ConfiguredPort, ConfiguredPort + MaxAttempts - 1);
+
+	return false;
 }
 
 void UMcpEditorSubsystem::StopServer()
@@ -101,6 +150,12 @@ FString UMcpEditorSubsystem::GetServerStatus() const
 
 	if (Server->IsRunning())
 	{
+		if (bUsedFallbackPort)
+		{
+			const int32 ConfiguredPort = Settings ? Settings->ServerPort : 8080;
+			return FString::Printf(TEXT("Running on port %d (fallback from %d)"),
+				Server->GetPort(), ConfiguredPort);
+		}
 		return FString::Printf(TEXT("Running on port %d"), Server->GetPort());
 	}
 
@@ -111,3 +166,29 @@ UMcpServerSettings* UMcpEditorSubsystem::GetSettings() const
 {
 	return GetMutableDefault<UMcpServerSettings>();
 }
+
+int32 UMcpEditorSubsystem::GetActualPort() const
+{
+	if (Server.IsValid() && Server->IsRunning())
+	{
+		return Server->GetPort();
+	}
+	return 0;
+}
+
+void UMcpEditorSubsystem::ShowPortFallbackNotification(int32 ConfiguredPort, int32 ActualPort)
+{
+	FNotificationInfo Info(FText::Format(
+		LOCTEXT("McpPortFallback", "MCP Server: Port {0} unavailable, using port {1}"),
+		FText::AsNumber(ConfiguredPort),
+		FText::AsNumber(ActualPort)
+	));
+
+	Info.bFireAndForget = true;
+	Info.ExpireDuration = 5.0f;
+	Info.bUseSuccessFailIcons = false;
+
+	FSlateNotificationManager::Get().AddNotification(Info);
+}
+
+#undef LOCTEXT_NAMESPACE

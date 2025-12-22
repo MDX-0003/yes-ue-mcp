@@ -27,6 +27,18 @@ public:
 	/** Bind address for HTTP server (127.0.0.1 for localhost only) */
 	UPROPERTY(config, EditAnywhere, Category = "Server")
 	FString BindAddress = TEXT("127.0.0.1");
+
+	/** Enable automatic port fallback when the primary port is unavailable */
+	UPROPERTY(config, EditAnywhere, Category = "Server")
+	bool bEnablePortFallback = true;
+
+	/** Maximum number of alternative ports to try (e.g., 10 means try ports 8080-8089) */
+	UPROPERTY(config, EditAnywhere, Category = "Server", meta = (ClampMin = "1", ClampMax = "100", EditCondition = "bEnablePortFallback"))
+	int32 MaxPortRetries = 10;
+
+	/** Show editor notification when fallback port is used */
+	UPROPERTY(config, EditAnywhere, Category = "Server", meta = (EditCondition = "bEnablePortFallback"))
+	bool bNotifyOnPortFallback = true;
 };
 
 /**
@@ -69,6 +81,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "MCP")
 	UMcpServerSettings* GetSettings() const;
 
+	/** Get the actual port the server is bound to (may differ from configured port if fallback was used) */
+	UFUNCTION(BlueprintCallable, Category = "MCP")
+	int32 GetActualPort() const;
+
+	/** Check if a fallback port was used instead of the configured port */
+	UFUNCTION(BlueprintCallable, Category = "MCP")
+	bool IsUsingFallbackPort() const { return bUsedFallbackPort; }
+
 private:
 	/** MCP server instance */
 	TUniquePtr<FMcpServer> Server;
@@ -77,6 +97,15 @@ private:
 	UPROPERTY()
 	TObjectPtr<UMcpServerSettings> Settings;
 
+	/** The port the server is actually running on (may differ from configured if fallback was used) */
+	int32 ActualBoundPort = 0;
+
+	/** Whether fallback port was used */
+	bool bUsedFallbackPort = false;
+
 	/** Load configuration from ini file */
 	void LoadConfiguration();
+
+	/** Show editor notification when fallback port is used */
+	void ShowPortFallbackNotification(int32 ConfiguredPort, int32 ActualPort);
 };
