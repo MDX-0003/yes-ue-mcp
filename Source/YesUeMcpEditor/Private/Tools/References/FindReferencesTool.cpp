@@ -16,7 +16,8 @@ FString UFindReferencesTool::GetToolDescription() const
 	return TEXT("Find references to assets, Blueprint variables, or nodes. "
 		"Use type='asset' to find what references an asset, "
 		"type='property' to find variable usages within a Blueprint, "
-		"or type='node' to find node/function usages.");
+		"or type='node' to find node/function usages. "
+		"asset_path can be a directory (e.g., /Game/Blueprints) to search all Blueprints recursively.");
 }
 
 TMap<FString, FMcpSchemaProperty> UFindReferencesTool::GetInputSchema() const
@@ -60,6 +61,22 @@ TMap<FString, FMcpSchemaProperty> UFindReferencesTool::GetInputSchema() const
 	Schema.Add(TEXT("limit"), Limit);
 
 	return Schema;
+}
+
+TArray<FAssetData> UFindReferencesTool::GetBlueprintsInPath(const FString& Path) const
+{
+	IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
+
+	FARFilter Filter;
+	Filter.PackagePaths.Add(FName(*Path));
+	Filter.bRecursivePaths = true;
+	Filter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
+	Filter.bRecursiveClasses = true;
+
+	TArray<FAssetData> Blueprints;
+	AssetRegistry.GetAssets(Filter, Blueprints);
+
+	return Blueprints;
 }
 
 TArray<FString> UFindReferencesTool::GetRequiredParams() const
@@ -182,108 +199,106 @@ FMcpToolResult UFindReferencesTool::FindAssetReferences(const FString& AssetPath
 
 FMcpToolResult UFindReferencesTool::FindPropertyReferences(const FString& AssetPath, const FString& VariableName, int32 Limit)
 {
-	// Load Blueprint
-	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
-	if (!Blueprint)
-	{
-		return FMcpToolResult::Error(FString::Printf(TEXT("Failed to load Blueprint at path: %s"), *AssetPath));
-	}
-
-	// Validate variable exists
-	bool bVarFound = false;
-	for (const FBPVariableDescription& Var : Blueprint->NewVariables)
-	{
-		if (Var.VarName.ToString() == VariableName)
-		{
-			bVarFound = true;
-			break;
-		}
-	}
-
-	if (!bVarFound)
-	{
-		return FMcpToolResult::Error(FString::Printf(
-			TEXT("Variable '%s' not found in Blueprint %s"), *VariableName, *AssetPath));
-	}
+	// Get Blueprints to search
+	TArray<FAssetData> BlueprintsToSearch = GetBlueprintsInPath(AssetPath);
 
 	// Build result
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 	Result->SetStringField(TEXT("type"), TEXT("property"));
-	Result->SetStringField(TEXT("blueprint"), AssetPath);
+	Result->SetStringField(TEXT("search_path"), AssetPath);
 	Result->SetStringField(TEXT("variable"), VariableName);
 
 	TArray<TSharedPtr<FJsonValue>> UsagesArray;
 	int32 GetCount = 0;
 	int32 SetCount = 0;
+	int32 BlueprintsSearched = 0;
 
-	// Traverse all graphs
-	TArray<UEdGraph*> AllGraphs = GetAllGraphs(Blueprint);
-
-	for (UEdGraph* Graph : AllGraphs)
+	for (const FAssetData& AssetData : BlueprintsToSearch)
 	{
-		if (!Graph)
-		{
-			continue;
-		}
-
 		if (UsagesArray.Num() >= Limit)
 		{
 			break;
 		}
 
-		FString GraphType = GetGraphType(Blueprint, Graph);
-
-		for (UEdGraphNode* Node : Graph->Nodes)
+		UBlueprint* Blueprint = Cast<UBlueprint>(AssetData.GetAsset());
+		if (!Blueprint)
 		{
+			continue;
+		}
+
+		BlueprintsSearched++;
+		FString BlueprintPath = AssetData.GetObjectPathString();
+
+		// Traverse all graphs
+		TArray<UEdGraph*> AllGraphs = GetAllGraphs(Blueprint);
+
+		for (UEdGraph* Graph : AllGraphs)
+		{
+			if (!Graph)
+			{
+				continue;
+			}
+
 			if (UsagesArray.Num() >= Limit)
 			{
 				break;
 			}
 
-			// Check if it's a variable node
-			UK2Node_Variable* VarNode = Cast<UK2Node_Variable>(Node);
-			if (!VarNode)
+			FString GraphType = GetGraphType(Blueprint, Graph);
+
+			for (UEdGraphNode* Node : Graph->Nodes)
 			{
-				continue;
+				if (UsagesArray.Num() >= Limit)
+				{
+					break;
+				}
+
+				// Check if it's a variable node
+				UK2Node_Variable* VarNode = Cast<UK2Node_Variable>(Node);
+				if (!VarNode)
+				{
+					continue;
+				}
+
+				FName VarRefName = VarNode->GetVarName();
+				if (VarRefName.ToString() != VariableName)
+				{
+					continue;
+				}
+
+				// Determine access type
+				bool bIsGetter = Cast<UK2Node_VariableGet>(Node) != nullptr;
+				bool bIsSetter = Cast<UK2Node_VariableSet>(Node) != nullptr;
+
+				FString AccessType = bIsGetter ? TEXT("get") : (bIsSetter ? TEXT("set") : TEXT("unknown"));
+
+				if (bIsGetter)
+				{
+					GetCount++;
+				}
+				else if (bIsSetter)
+				{
+					SetCount++;
+				}
+
+				// Build usage entry
+				TSharedPtr<FJsonObject> UsageObj = MakeShareable(new FJsonObject);
+				UsageObj->SetStringField(TEXT("blueprint"), BlueprintPath);
+				UsageObj->SetStringField(TEXT("graph"), Graph->GetName());
+				UsageObj->SetStringField(TEXT("graph_type"), GraphType);
+				UsageObj->SetStringField(TEXT("node_guid"), Node->NodeGuid.ToString(EGuidFormats::DigitsWithHyphens));
+				UsageObj->SetStringField(TEXT("node_class"), Node->GetClass()->GetName());
+				UsageObj->SetStringField(TEXT("node_title"), Node->GetNodeTitle(ENodeTitleType::FullTitle).ToString());
+				UsageObj->SetStringField(TEXT("access_type"), AccessType);
+
+				// Include position
+				TSharedPtr<FJsonObject> PositionObj = MakeShareable(new FJsonObject);
+				PositionObj->SetNumberField(TEXT("x"), Node->NodePosX);
+				PositionObj->SetNumberField(TEXT("y"), Node->NodePosY);
+				UsageObj->SetObjectField(TEXT("position"), PositionObj);
+
+				UsagesArray.Add(MakeShareable(new FJsonValueObject(UsageObj)));
 			}
-
-			FName VarRefName = VarNode->GetVarName();
-			if (VarRefName.ToString() != VariableName)
-			{
-				continue;
-			}
-
-			// Determine access type
-			bool bIsGetter = Cast<UK2Node_VariableGet>(Node) != nullptr;
-			bool bIsSetter = Cast<UK2Node_VariableSet>(Node) != nullptr;
-
-			FString AccessType = bIsGetter ? TEXT("get") : (bIsSetter ? TEXT("set") : TEXT("unknown"));
-
-			if (bIsGetter)
-			{
-				GetCount++;
-			}
-			else if (bIsSetter)
-			{
-				SetCount++;
-			}
-
-			// Build usage entry
-			TSharedPtr<FJsonObject> UsageObj = MakeShareable(new FJsonObject);
-			UsageObj->SetStringField(TEXT("graph"), Graph->GetName());
-			UsageObj->SetStringField(TEXT("graph_type"), GraphType);
-			UsageObj->SetStringField(TEXT("node_guid"), Node->NodeGuid.ToString(EGuidFormats::DigitsWithHyphens));
-			UsageObj->SetStringField(TEXT("node_class"), Node->GetClass()->GetName());
-			UsageObj->SetStringField(TEXT("node_title"), Node->GetNodeTitle(ENodeTitleType::FullTitle).ToString());
-			UsageObj->SetStringField(TEXT("access_type"), AccessType);
-
-			// Include position
-			TSharedPtr<FJsonObject> PositionObj = MakeShareable(new FJsonObject);
-			PositionObj->SetNumberField(TEXT("x"), Node->NodePosX);
-			PositionObj->SetNumberField(TEXT("y"), Node->NodePosY);
-			UsageObj->SetObjectField(TEXT("position"), PositionObj);
-
-			UsagesArray.Add(MakeShareable(new FJsonValueObject(UsageObj)));
 		}
 	}
 
@@ -291,6 +306,7 @@ FMcpToolResult UFindReferencesTool::FindPropertyReferences(const FString& AssetP
 	Result->SetNumberField(TEXT("count"), UsagesArray.Num());
 	Result->SetNumberField(TEXT("get_count"), GetCount);
 	Result->SetNumberField(TEXT("set_count"), SetCount);
+	Result->SetNumberField(TEXT("blueprints_searched"), BlueprintsSearched);
 	Result->SetBoolField(TEXT("truncated"), UsagesArray.Num() >= Limit);
 
 	return FMcpToolResult::Json(Result);
@@ -299,17 +315,13 @@ FMcpToolResult UFindReferencesTool::FindPropertyReferences(const FString& AssetP
 FMcpToolResult UFindReferencesTool::FindNodeReferences(const FString& AssetPath, const FString& NodeClass,
 													   const FString& FunctionName, int32 Limit)
 {
-	// Load Blueprint
-	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
-	if (!Blueprint)
-	{
-		return FMcpToolResult::Error(FString::Printf(TEXT("Failed to load Blueprint at path: %s"), *AssetPath));
-	}
+	// Get Blueprints to search
+	TArray<FAssetData> BlueprintsToSearch = GetBlueprintsInPath(AssetPath);
 
 	// Build result
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 	Result->SetStringField(TEXT("type"), TEXT("node"));
-	Result->SetStringField(TEXT("blueprint"), AssetPath);
+	Result->SetStringField(TEXT("search_path"), AssetPath);
 
 	// Add search criteria
 	TSharedPtr<FJsonObject> SearchObj = MakeShareable(new FJsonObject);
@@ -324,90 +336,110 @@ FMcpToolResult UFindReferencesTool::FindNodeReferences(const FString& AssetPath,
 	Result->SetObjectField(TEXT("search"), SearchObj);
 
 	TArray<TSharedPtr<FJsonValue>> UsagesArray;
+	int32 BlueprintsSearched = 0;
 
-	// Traverse all graphs
-	TArray<UEdGraph*> AllGraphs = GetAllGraphs(Blueprint);
-
-	for (UEdGraph* Graph : AllGraphs)
+	for (const FAssetData& AssetData : BlueprintsToSearch)
 	{
-		if (!Graph)
-		{
-			continue;
-		}
-
 		if (UsagesArray.Num() >= Limit)
 		{
 			break;
 		}
 
-		FString GraphType = GetGraphType(Blueprint, Graph);
-
-		for (UEdGraphNode* Node : Graph->Nodes)
+		UBlueprint* Blueprint = Cast<UBlueprint>(AssetData.GetAsset());
+		if (!Blueprint)
 		{
+			continue;
+		}
+
+		BlueprintsSearched++;
+		FString BlueprintPath = AssetData.GetObjectPathString();
+
+		// Traverse all graphs
+		TArray<UEdGraph*> AllGraphs = GetAllGraphs(Blueprint);
+
+		for (UEdGraph* Graph : AllGraphs)
+		{
+			if (!Graph)
+			{
+				continue;
+			}
+
 			if (UsagesArray.Num() >= Limit)
 			{
 				break;
 			}
 
-			bool bMatches = false;
-			FString MatchedFunctionName;
+			FString GraphType = GetGraphType(Blueprint, Graph);
 
-			// Match by node class
-			if (!NodeClass.IsEmpty())
+			for (UEdGraphNode* Node : Graph->Nodes)
 			{
-				FString ActualClass = Node->GetClass()->GetName();
-				if (ActualClass == NodeClass || ActualClass.Contains(NodeClass))
+				if (UsagesArray.Num() >= Limit)
 				{
-					bMatches = true;
+					break;
 				}
-			}
 
-			// Match by function name (for CallFunction nodes)
-			if (!FunctionName.IsEmpty())
-			{
+				bool bMatches = false;
+				FString MatchedFunctionName;
+
+				// Match by node class
+				if (!NodeClass.IsEmpty())
+				{
+					FString ActualClass = Node->GetClass()->GetName();
+					if (ActualClass == NodeClass || ActualClass.Contains(NodeClass))
+					{
+						bMatches = true;
+					}
+				}
+
+				// Match by function name (for CallFunction nodes)
+				if (!FunctionName.IsEmpty())
+				{
+					UK2Node_CallFunction* CallNode = Cast<UK2Node_CallFunction>(Node);
+					if (CallNode)
+					{
+						UFunction* Func = CallNode->GetTargetFunction();
+						if (Func && Func->GetName().Contains(FunctionName))
+						{
+							bMatches = true;
+							MatchedFunctionName = Func->GetName();
+						}
+					}
+				}
+
+				if (!bMatches)
+				{
+					continue;
+				}
+
+				// Build usage entry
+				TSharedPtr<FJsonObject> UsageObj = NodeReferenceToJson(Node, Graph, GraphType);
+				UsageObj->SetStringField(TEXT("blueprint"), BlueprintPath);
+
+				// Add function name if matched
+				if (!MatchedFunctionName.IsEmpty())
+				{
+					UsageObj->SetStringField(TEXT("function"), MatchedFunctionName);
+				}
+
+				// For CallFunction nodes, add target class
 				UK2Node_CallFunction* CallNode = Cast<UK2Node_CallFunction>(Node);
 				if (CallNode)
 				{
 					UFunction* Func = CallNode->GetTargetFunction();
-					if (Func && Func->GetName().Contains(FunctionName))
+					if (Func && Func->GetOwnerClass())
 					{
-						bMatches = true;
-						MatchedFunctionName = Func->GetName();
+						UsageObj->SetStringField(TEXT("target_class"), Func->GetOwnerClass()->GetName());
 					}
 				}
+
+				UsagesArray.Add(MakeShareable(new FJsonValueObject(UsageObj)));
 			}
-
-			if (!bMatches)
-			{
-				continue;
-			}
-
-			// Build usage entry
-			TSharedPtr<FJsonObject> UsageObj = NodeReferenceToJson(Node, Graph, GraphType);
-
-			// Add function name if matched
-			if (!MatchedFunctionName.IsEmpty())
-			{
-				UsageObj->SetStringField(TEXT("function"), MatchedFunctionName);
-			}
-
-			// For CallFunction nodes, add target class
-			UK2Node_CallFunction* CallNode = Cast<UK2Node_CallFunction>(Node);
-			if (CallNode)
-			{
-				UFunction* Func = CallNode->GetTargetFunction();
-				if (Func && Func->GetOwnerClass())
-				{
-					UsageObj->SetStringField(TEXT("target_class"), Func->GetOwnerClass()->GetName());
-				}
-			}
-
-			UsagesArray.Add(MakeShareable(new FJsonValueObject(UsageObj)));
 		}
 	}
 
 	Result->SetArrayField(TEXT("usages"), UsagesArray);
 	Result->SetNumberField(TEXT("count"), UsagesArray.Num());
+	Result->SetNumberField(TEXT("blueprints_searched"), BlueprintsSearched);
 	Result->SetBoolField(TEXT("truncated"), UsagesArray.Num() >= Limit);
 
 	return FMcpToolResult::Json(Result);

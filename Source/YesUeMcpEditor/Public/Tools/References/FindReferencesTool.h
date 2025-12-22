@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Tools/McpToolBase.h"
+#include "AssetRegistry/AssetData.h"
 #include "FindReferencesTool.generated.h"
 
 class UBlueprint;
@@ -53,4 +54,7 @@ private:
 	/** Convert a node reference to JSON */
 	TSharedPtr<FJsonObject> NodeReferenceToJson(UEdGraphNode* Node, UEdGraph* Graph,
 												 const FString& GraphType) const;
+
+	/** Get all Blueprints in a directory path */
+	TArray<FAssetData> GetBlueprintsInPath(const FString& Path) const;
 };
