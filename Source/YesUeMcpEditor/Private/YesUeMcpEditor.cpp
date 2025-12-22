@@ -16,10 +16,12 @@
 #include "Tools/Level/QueryLevelTool.h"
 #include "Tools/Level/ActorDetailsTool.h"
 #include "Tools/Project/ProjectSettingsTool.h"
+#include "Tools/Project/ProjectInfoTool.h"
 #include "Tools/Analysis/ClassHierarchyTool.h"
 #include "Tools/Data/DataAssetTool.h"
 #include "Tools/Asset/AssetSearchTool.h"
 #include "Tools/Asset/InspectAssetTool.h"
+#include "Tools/References/FindReferencesTool.h"
 
 DEFINE_LOG_CATEGORY(LogYesUeMcpEditor);
 
@@ -58,6 +60,7 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 
 	// Project configuration tools
 	Registry.RegisterToolClass(UProjectSettingsTool::StaticClass());
+	Registry.RegisterToolClass(UProjectInfoTool::StaticClass());
 
 	// Analysis tools
 	Registry.RegisterToolClass(UClassHierarchyTool::StaticClass());
@@ -68,6 +71,9 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 	// Asset tools
 	Registry.RegisterToolClass(UAssetSearchTool::StaticClass());
 	Registry.RegisterToolClass(UInspectAssetTool::StaticClass());
+
+	// Reference tools
+	Registry.RegisterToolClass(UFindReferencesTool::StaticClass());
 
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("Registered %d MCP tools"), Registry.GetToolCount());
 }

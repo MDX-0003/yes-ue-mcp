@@ -84,6 +84,19 @@ git branch -D release-temp
 - All tools inherit from `UMcpToolBase`
 - Register tools in `FYesUeMcpEditorModule::RegisterBuiltInTools()`
 
+## Version Management
+
+- **Plugin version is defined in `YesUeMcp.uplugin`** (`VersionName` field)
+- **Increment version when:**
+  - Adding a new tool
+  - Changing MCP protocol behavior
+  - Modifying tool input/output schema
+  - Breaking changes to existing tools
+- Use semantic versioning: `MAJOR.MINOR.PATCH`
+  - MAJOR: Breaking changes
+  - MINOR: New features (new tools, new parameters)
+  - PATCH: Bug fixes
+
 ## Key Files
 
 - `Source/YesUeMcp/Public/Tools/McpToolBase.h` - Base class for all tools
@@ -99,7 +112,7 @@ git branch -D release-temp
 - **Port:** 8080 (configurable)
 - **CORS:** Enabled for cross-origin requests
 
-## Available Tools (16 total)
+## Available Tools (18 total)
 
 ### Asset Tools
 | Tool | Description |
@@ -132,6 +145,11 @@ git branch -D release-temp
 | `get-project-settings` | Query input, collision, tags, and map settings |
 | `get-class-hierarchy` | Browse class inheritance (parents/children) |
 | `inspect-data-asset` | Read DataTable and DataAsset contents |
+
+### Reference Tools
+| Tool | Description |
+|------|-------------|
+| `find-references` | Find references to assets, Blueprint variables, or nodes (type: asset/property/node) |
 
 ## Future Work
 
