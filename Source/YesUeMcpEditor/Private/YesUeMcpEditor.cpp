@@ -22,6 +22,7 @@
 #include "Tools/Asset/AssetSearchTool.h"
 #include "Tools/Asset/InspectAssetTool.h"
 #include "Tools/References/FindReferencesTool.h"
+#include "Tools/Widget/WidgetBlueprintTool.h"
 
 DEFINE_LOG_CATEGORY(LogYesUeMcpEditor);
 
@@ -74,6 +75,9 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 
 	// Reference tools
 	Registry.RegisterToolClass(UFindReferencesTool::StaticClass());
+
+	// Widget tools
+	Registry.RegisterToolClass(UWidgetBlueprintTool::StaticClass());
 
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("Registered %d MCP tools"), Registry.GetToolCount());
 }

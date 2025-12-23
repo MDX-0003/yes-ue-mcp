@@ -112,7 +112,7 @@ git branch -D release-temp
 - **Port:** 8080 (configurable)
 - **CORS:** Enabled for cross-origin requests
 
-## Available Tools (18 total)
+## Available Tools (19 total)
 
 ### Asset Tools
 | Tool | Description |
@@ -150,6 +150,11 @@ git branch -D release-temp
 | Tool | Description |
 |------|-------------|
 | `find-references` | Find references to assets, Blueprint variables, or nodes (type: asset/property/node) |
+
+### Widget Tools
+| Tool | Description |
+|------|-------------|
+| `inspect-widget-blueprint` | Inspect Widget Blueprint hierarchy, slots (anchors, offsets, sizes), visibility, and property bindings |
 
 ## Future Work
 
