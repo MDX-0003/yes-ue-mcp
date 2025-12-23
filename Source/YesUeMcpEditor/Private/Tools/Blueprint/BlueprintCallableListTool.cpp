@@ -96,6 +96,8 @@ void UBlueprintCallableListTool::ExtractEvents(UBlueprint* Blueprint, TArray<TSh
 		// Find all event nodes in this graph
 		for (UEdGraphNode* Node : Graph->Nodes)
 		{
+			if (!Node) continue;
+
 			UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node);
 			if (!EventNode)
 			{
@@ -147,6 +149,8 @@ void UBlueprintCallableListTool::ExtractFunctions(UBlueprint* Blueprint, TArray<
 		// Find entry and result nodes
 		for (UEdGraphNode* Node : Graph->Nodes)
 		{
+			if (!Node) continue;
+
 			if (!EntryNode)
 			{
 				EntryNode = Cast<UK2Node_FunctionEntry>(Node);
@@ -223,6 +227,8 @@ void UBlueprintCallableListTool::ExtractMacros(UBlueprint* Blueprint, TArray<TSh
 		// Find tunnel entry and exit nodes (macros use tunnels)
 		for (UEdGraphNode* Node : Graph->Nodes)
 		{
+			if (!Node) continue;
+
 			UK2Node_Tunnel* TunnelNode = Cast<UK2Node_Tunnel>(Node);
 			if (TunnelNode)
 			{

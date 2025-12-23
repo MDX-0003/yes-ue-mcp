@@ -89,11 +89,14 @@ FMcpToolResult UBlueprintVariablesTool::Execute(
 			VarObj->SetStringField(TEXT("default_value"), Var.DefaultValue);
 		}
 
-		// Tooltip
-		FString Tooltip = Var.GetMetaData(TEXT("Tooltip"));
-		if (!Tooltip.IsEmpty())
+		// Tooltip - check HasMetaData first to avoid crash on invalid variables
+		if (Var.HasMetaData(TEXT("Tooltip")))
 		{
-			VarObj->SetStringField(TEXT("tooltip"), Tooltip);
+			FString Tooltip = Var.GetMetaData(TEXT("Tooltip"));
+			if (!Tooltip.IsEmpty())
+			{
+				VarObj->SetStringField(TEXT("tooltip"), Tooltip);
+			}
 		}
 
 		// Replication

@@ -56,6 +56,8 @@ FMcpToolResult UBlueprintFunctionsTool::Execute(
 		// Find entry and result nodes
 		for (UEdGraphNode* Node : Graph->Nodes)
 		{
+			if (!Node) continue;
+
 			if (!EntryNode)
 			{
 				EntryNode = Cast<UK2Node_FunctionEntry>(Node);

@@ -131,6 +131,7 @@ TSharedPtr<FJsonObject> UBlueprintAnalysisTool::ExtractFunctions(UBlueprint* Blu
 		// Find function entry node for parameters
 		for (UEdGraphNode* Node : Graph->Nodes)
 		{
+			if (!Node) continue;
 			if (UK2Node_FunctionEntry* EntryNode = Cast<UK2Node_FunctionEntry>(Node))
 			{
 				// Get function flags
@@ -315,6 +316,8 @@ TSharedPtr<FJsonObject> UBlueprintAnalysisTool::ExtractEventGraphSummary(UBluepr
 
 		for (UEdGraphNode* Node : Graph->Nodes)
 		{
+			if (!Node) continue;
+
 			// Standard events (BeginPlay, Tick, etc.)
 			if (UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node))
 			{

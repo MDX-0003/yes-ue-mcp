@@ -251,6 +251,8 @@ FMcpToolResult UFindReferencesTool::FindPropertyReferences(const FString& AssetP
 
 			for (UEdGraphNode* Node : Graph->Nodes)
 			{
+				if (!Node) continue;
+
 				if (UsagesArray.Num() >= Limit)
 				{
 					break;
@@ -482,6 +484,8 @@ FMcpToolResult UFindReferencesTool::FindNodeReferences(const FString& AssetPath,
 
 			for (UEdGraphNode* Node : Graph->Nodes)
 			{
+				if (!Node) continue;
+
 				if (UsagesArray.Num() >= Limit)
 				{
 					break;
@@ -615,6 +619,8 @@ FMcpToolResult UFindReferencesTool::FindNodeReferencesLegacy(const FString& Asse
 
 			for (UEdGraphNode* Node : Graph->Nodes)
 			{
+				if (!Node) continue;
+
 				if (UsagesArray.Num() >= Limit)
 				{
 					break;
