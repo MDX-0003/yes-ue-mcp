@@ -744,15 +744,30 @@ TArray<TSharedPtr<FJsonValue>> UWidgetBlueprintTool::ExtractAnimations(UWidgetBl
 			AnimObj->SetNumberField(TEXT("duration"), Duration);
 			AnimObj->SetNumberField(TEXT("display_rate_fps"), DisplayRate.AsDecimal());
 
-			// Track count
+			// Track count - API changed in UE 5.7
+#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 7
+			// UE 5.7+ uses different API
+			int32 TotalTracks = 0;
+			for (const FMovieSceneBinding& Binding : MovieScene->GetBindings())
+			{
+				TotalTracks += Binding.GetTracks().Num();
+			}
+			AnimObj->SetNumberField(TEXT("track_count"), TotalTracks);
+#else
 			AnimObj->SetNumberField(TEXT("track_count"), MovieScene->GetMasterTracks().Num() + MovieScene->GetObjectBindings().Num());
+#endif
 
 			// Get bound object names (which widgets are animated)
 			TArray<TSharedPtr<FJsonValue>> BoundObjectsArray;
 			for (const FMovieSceneBinding& Binding : MovieScene->GetBindings())
 			{
 				TSharedPtr<FJsonObject> BindingObj = MakeShareable(new FJsonObject);
+#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 7
+				// GetName() deprecated in 5.7, use GUID as identifier
+				BindingObj->SetStringField(TEXT("guid"), Binding.GetObjectGuid().ToString());
+#else
 				BindingObj->SetStringField(TEXT("name"), Binding.GetName());
+#endif
 				BindingObj->SetNumberField(TEXT("track_count"), Binding.GetTracks().Num());
 
 				// Get track types for this binding

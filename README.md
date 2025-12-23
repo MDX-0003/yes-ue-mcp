@@ -1,6 +1,6 @@
 # yes-ue-mcp
 
-**Native C++ Model Context Protocol (MCP) plugin for Unreal Engine 5.4+**
+**Native C++ Model Context Protocol (MCP) plugin for Unreal Engine 5.6+**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -276,7 +276,7 @@ See [Docs/ToolDevelopment.md](Docs/ToolDevelopment.md) for a guide on creating c
 
 ### Building
 
-Requires Unreal Engine 5.4 or higher.
+Requires Unreal Engine 5.6 or higher.
 
 ```bash
 # Build with UnrealBuildTool

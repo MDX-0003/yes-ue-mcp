@@ -47,6 +47,7 @@ public class YesUeMcpEditor : ModuleRules
 			"UMG",
 			"UMGEditor",
 			"PropertyEditor",
+			"PropertyPath",
 
 			// Animation/Sequencer (for UMG animations)
 			"MovieScene",

@@ -129,12 +129,9 @@ void UMaterialParametersTool::GetMaterialParameters(UMaterial* Material,
 		return;
 	}
 
-	// Get all expressions from the material
-	const TArray<TObjectPtr<UMaterialExpression>>& Expressions = Material->GetExpressions();
-
-	for (const TObjectPtr<UMaterialExpression>& ExprPtr : Expressions)
+	// Get all expressions from the material - GetExpressions() returns TArrayView in 5.7+
+	for (UMaterialExpression* Expression : Material->GetExpressions())
 	{
-		UMaterialExpression* Expression = ExprPtr.Get();
 		if (!Expression)
 		{
 			continue;

@@ -93,44 +93,56 @@ FMcpToolResult UMaterialGraphTool::Execute(
 	TSharedPtr<FJsonObject> MaterialOutputs = MakeShareable(new FJsonObject);
 
 	// Access material inputs via editor-only data
+#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 7
+	// UE 5.7+ uses GetEditorOnlyData() without HasEditorOnlyData() check
+	if (UMaterialEditorOnlyData* EditorData = Material->GetEditorOnlyData())
+	{
+		MaterialOutputs->SetObjectField(TEXT("base_color"), MaterialOutputToJson(&EditorData->BaseColor, TEXT("BaseColor"), Material));
+		MaterialOutputs->SetObjectField(TEXT("metallic"), MaterialOutputToJson(&EditorData->Metallic, TEXT("Metallic"), Material));
+		MaterialOutputs->SetObjectField(TEXT("specular"), MaterialOutputToJson(&EditorData->Specular, TEXT("Specular"), Material));
+		MaterialOutputs->SetObjectField(TEXT("roughness"), MaterialOutputToJson(&EditorData->Roughness, TEXT("Roughness"), Material));
+		MaterialOutputs->SetObjectField(TEXT("anisotropy"), MaterialOutputToJson(&EditorData->Anisotropy, TEXT("Anisotropy"), Material));
+		MaterialOutputs->SetObjectField(TEXT("normal"), MaterialOutputToJson(&EditorData->Normal, TEXT("Normal"), Material));
+		MaterialOutputs->SetObjectField(TEXT("tangent"), MaterialOutputToJson(&EditorData->Tangent, TEXT("Tangent"), Material));
+		MaterialOutputs->SetObjectField(TEXT("emissive_color"), MaterialOutputToJson(&EditorData->EmissiveColor, TEXT("EmissiveColor"), Material));
+		MaterialOutputs->SetObjectField(TEXT("opacity"), MaterialOutputToJson(&EditorData->Opacity, TEXT("Opacity"), Material));
+		MaterialOutputs->SetObjectField(TEXT("opacity_mask"), MaterialOutputToJson(&EditorData->OpacityMask, TEXT("OpacityMask"), Material));
+		MaterialOutputs->SetObjectField(TEXT("world_position_offset"), MaterialOutputToJson(&EditorData->WorldPositionOffset, TEXT("WorldPositionOffset"), Material));
+		MaterialOutputs->SetObjectField(TEXT("subsurface_color"), MaterialOutputToJson(&EditorData->SubsurfaceColor, TEXT("SubsurfaceColor"), Material));
+		MaterialOutputs->SetObjectField(TEXT("ambient_occlusion"), MaterialOutputToJson(&EditorData->AmbientOcclusion, TEXT("AmbientOcclusion"), Material));
+		MaterialOutputs->SetObjectField(TEXT("refraction"), MaterialOutputToJson(&EditorData->Refraction, TEXT("Refraction"), Material));
+		MaterialOutputs->SetObjectField(TEXT("pixel_depth_offset"), MaterialOutputToJson(&EditorData->PixelDepthOffset, TEXT("PixelDepthOffset"), Material));
+	}
+#else
+	// UE 5.6 and earlier
 	if (Material->HasEditorOnlyData())
 	{
-		// BaseColor
 		MaterialOutputs->SetObjectField(TEXT("base_color"), MaterialOutputToJson(&Material->GetEditorOnlyData()->BaseColor, TEXT("BaseColor"), Material));
-		// Metallic
 		MaterialOutputs->SetObjectField(TEXT("metallic"), MaterialOutputToJson(&Material->GetEditorOnlyData()->Metallic, TEXT("Metallic"), Material));
-		// Specular
 		MaterialOutputs->SetObjectField(TEXT("specular"), MaterialOutputToJson(&Material->GetEditorOnlyData()->Specular, TEXT("Specular"), Material));
-		// Roughness
 		MaterialOutputs->SetObjectField(TEXT("roughness"), MaterialOutputToJson(&Material->GetEditorOnlyData()->Roughness, TEXT("Roughness"), Material));
-		// Anisotropy
 		MaterialOutputs->SetObjectField(TEXT("anisotropy"), MaterialOutputToJson(&Material->GetEditorOnlyData()->Anisotropy, TEXT("Anisotropy"), Material));
-		// Normal
 		MaterialOutputs->SetObjectField(TEXT("normal"), MaterialOutputToJson(&Material->GetEditorOnlyData()->Normal, TEXT("Normal"), Material));
-		// Tangent
 		MaterialOutputs->SetObjectField(TEXT("tangent"), MaterialOutputToJson(&Material->GetEditorOnlyData()->Tangent, TEXT("Tangent"), Material));
-		// EmissiveColor
 		MaterialOutputs->SetObjectField(TEXT("emissive_color"), MaterialOutputToJson(&Material->GetEditorOnlyData()->EmissiveColor, TEXT("EmissiveColor"), Material));
-		// Opacity
 		MaterialOutputs->SetObjectField(TEXT("opacity"), MaterialOutputToJson(&Material->GetEditorOnlyData()->Opacity, TEXT("Opacity"), Material));
-		// OpacityMask
 		MaterialOutputs->SetObjectField(TEXT("opacity_mask"), MaterialOutputToJson(&Material->GetEditorOnlyData()->OpacityMask, TEXT("OpacityMask"), Material));
-		// WorldPositionOffset
 		MaterialOutputs->SetObjectField(TEXT("world_position_offset"), MaterialOutputToJson(&Material->GetEditorOnlyData()->WorldPositionOffset, TEXT("WorldPositionOffset"), Material));
-		// SubsurfaceColor
 		MaterialOutputs->SetObjectField(TEXT("subsurface_color"), MaterialOutputToJson(&Material->GetEditorOnlyData()->SubsurfaceColor, TEXT("SubsurfaceColor"), Material));
-		// AmbientOcclusion
 		MaterialOutputs->SetObjectField(TEXT("ambient_occlusion"), MaterialOutputToJson(&Material->GetEditorOnlyData()->AmbientOcclusion, TEXT("AmbientOcclusion"), Material));
-		// Refraction
 		MaterialOutputs->SetObjectField(TEXT("refraction"), MaterialOutputToJson(&Material->GetEditorOnlyData()->Refraction, TEXT("Refraction"), Material));
-		// PixelDepthOffset
 		MaterialOutputs->SetObjectField(TEXT("pixel_depth_offset"), MaterialOutputToJson(&Material->GetEditorOnlyData()->PixelDepthOffset, TEXT("PixelDepthOffset"), Material));
 	}
+#endif
 
 	Result->SetObjectField(TEXT("material_outputs"), MaterialOutputs);
 
-	// Get all expressions
-	const TArray<TObjectPtr<UMaterialExpression>>& Expressions = Material->GetExpressions();
+	// Get all expressions - GetExpressions() returns TArrayView in 5.7+, TArray& in earlier versions
+	TArray<TObjectPtr<UMaterialExpression>> Expressions;
+	for (UMaterialExpression* Expr : Material->GetExpressions())
+	{
+		Expressions.Add(Expr);
+	}
 
 	TArray<TSharedPtr<FJsonValue>> ExpressionsArray;
 	int32 ParameterCount = 0;
@@ -216,16 +228,14 @@ TSharedPtr<FJsonObject> UMaterialGraphTool::ExpressionToJson(UMaterialExpression
 	// Get material owner for ID lookups
 	UMaterial* OwnerMaterial = Expression->Material;
 
-	// Inputs
+	// Inputs - iterate using GetInput() until nullptr (works in all UE versions)
 	TArray<TSharedPtr<FJsonValue>> InputsArray;
-	TArray<FExpressionInput*> Inputs = Expression->GetInputs();
-
-	for (int32 i = 0; i < Inputs.Num(); i++)
+	for (int32 i = 0; ; i++)
 	{
-		FExpressionInput* Input = Inputs[i];
+		FExpressionInput* Input = Expression->GetInput(i);
 		if (!Input)
 		{
-			continue;
+			break; // No more inputs
 		}
 
 		FString InputName = Expression->GetInputName(i).ToString();
