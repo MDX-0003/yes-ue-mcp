@@ -65,16 +65,19 @@ FMcpToolResult UAssetSearchTool::Execute(
 	// Class filter
 	if (!ClassFilter.IsEmpty())
 	{
-		// Try to find the class
-		UClass* FilterClass = FindObject<UClass>(nullptr, *ClassFilter);
+		UClass* FilterClass = nullptr;
+
+		// Use FindFirstObjectSafe - searches all loaded packages by name (built-in UE function)
+		FilterClass = FindFirstObjectSafe<UClass>(*ClassFilter);
+
+		// Try with U/A prefix if not found
 		if (!FilterClass)
 		{
-			// Try with common prefixes
-			FilterClass = FindObject<UClass>(nullptr, *FString::Printf(TEXT("U%s"), *ClassFilter));
+			FilterClass = FindFirstObjectSafe<UClass>(*FString::Printf(TEXT("U%s"), *ClassFilter));
 		}
 		if (!FilterClass)
 		{
-			FilterClass = FindObject<UClass>(nullptr, *FString::Printf(TEXT("A%s"), *ClassFilter));
+			FilterClass = FindFirstObjectSafe<UClass>(*FString::Printf(TEXT("A%s"), *ClassFilter));
 		}
 
 		if (FilterClass)
@@ -84,8 +87,8 @@ FMcpToolResult UAssetSearchTool::Execute(
 		}
 		else
 		{
-			// Use class name directly as a fallback
-			Filter.ClassPaths.Add(FTopLevelAssetPath(TEXT("/Script/Engine"), FName(*ClassFilter)));
+			return FMcpToolResult::Error(FString::Printf(
+				TEXT("Asset class '%s' not found"), *ClassFilter));
 		}
 	}
 

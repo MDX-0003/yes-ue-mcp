@@ -111,12 +111,17 @@ UClass* UClassHierarchyTool::FindClassByName(const FString& ClassName) const
 		}
 	}
 
-	// Search for Blueprint class by asset name
+	// Search for Blueprint class by asset name (includes WidgetBlueprint, AnimBlueprint, etc.)
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
 	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
 
+	// Use FARFilter with bRecursiveClasses to find ALL Blueprint-derived types
+	FARFilter Filter;
+	Filter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
+	Filter.bRecursiveClasses = true;
+
 	TArray<FAssetData> AssetDataList;
-	AssetRegistry.GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), AssetDataList);
+	AssetRegistry.GetAssets(Filter, AssetDataList);
 
 	for (const FAssetData& AssetData : AssetDataList)
 	{

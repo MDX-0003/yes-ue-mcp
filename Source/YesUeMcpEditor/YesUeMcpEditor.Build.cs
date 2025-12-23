@@ -61,7 +61,8 @@ public class YesUeMcpEditor : ModuleRules
 
 			// Project Settings
 			"GameplayTags",
-			"EngineSettings"
+			"EngineSettings",
+			"Projects"
 		});
 	}
 }

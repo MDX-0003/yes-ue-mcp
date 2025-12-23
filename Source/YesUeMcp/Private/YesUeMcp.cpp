@@ -1,11 +1,10 @@
 // Copyright softdaddy-o 2024. All Rights Reserved.
 
 #include "YesUeMcp.h"
+#include "Misc/EngineVersionComparison.h"
 
 // Enforce minimum engine version at compile time
-#if ENGINE_MAJOR_VERSION < 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION < 6)
-	#error "yes-ue-mcp requires Unreal Engine 5.6 or higher. Please upgrade your engine version."
-#endif
+static_assert(UE_VERSION_NEWER_THAN(5, 5, 0), "yes-ue-mcp requires Unreal Engine 5.6 or higher. Please upgrade your engine version.");
 
 DEFINE_LOG_CATEGORY(LogYesUeMcp);
 
