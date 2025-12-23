@@ -10,6 +10,9 @@
 #include "K2Node_VariableGet.h"
 #include "K2Node_VariableSet.h"
 #include "K2Node_CallFunction.h"
+#include "FindInBlueprintManager.h"
+#include "FindInBlueprints.h"
+#include "ImaginaryBlueprintData.h"
 
 FString UFindReferencesTool::GetToolDescription() const
 {
@@ -312,7 +315,246 @@ FMcpToolResult UFindReferencesTool::FindPropertyReferences(const FString& AssetP
 	return FMcpToolResult::Json(Result);
 }
 
+TArray<FSoftObjectPath> UFindReferencesTool::FindMatchingBlueprintsViaFiB(const FString& SearchTerm, const FString& PathFilter)
+{
+	TArray<FSoftObjectPath> MatchingBlueprints;
+
+	// Create a synchronous search using FStreamSearch
+	FStreamSearchOptions SearchOptions;
+	SearchOptions.ImaginaryDataFilter = ESearchQueryFilter::NodesFilter; // Focus on nodes
+	TSharedRef<FStreamSearch> StreamSearch = MakeShared<FStreamSearch>(SearchTerm, SearchOptions);
+
+	// Run the search synchronously
+	StreamSearch->Init();
+	StreamSearch->Run();
+	StreamSearch->EnsureCompletion();
+
+	// Get search results (these include Blueprint paths)
+	TArray<TSharedPtr<FFindInBlueprintsResult>> Results;
+	StreamSearch->GetFilteredItems(Results);
+
+	for (const TSharedPtr<FFindInBlueprintsResult>& Result : Results)
+	{
+		if (!Result.IsValid())
+		{
+			continue;
+		}
+
+		// GetParentBlueprint() will load the Blueprint, but we can check the display text
+		// to get the path without loading. The root result's display text contains the BP name.
+		// However, for safety we'll use GetParentBlueprint since that's the reliable method.
+		UBlueprint* BP = Result->GetParentBlueprint();
+		if (BP)
+		{
+			FSoftObjectPath AssetPath(BP);
+			FString PathString = AssetPath.GetAssetPathString();
+
+			// Apply path filter if specified
+			if (!PathFilter.IsEmpty() && !PathString.StartsWith(PathFilter))
+			{
+				continue;
+			}
+
+			MatchingBlueprints.AddUnique(AssetPath);
+		}
+	}
+
+	return MatchingBlueprints;
+}
+
 FMcpToolResult UFindReferencesTool::FindNodeReferences(const FString& AssetPath, const FString& NodeClass,
+													   const FString& FunctionName, int32 Limit)
+{
+	// Check FiB cache status
+	FFindInBlueprintSearchManager& SearchManager = FFindInBlueprintSearchManager::Get();
+	bool bCacheInProgress = SearchManager.IsCacheInProgress();
+	bool bDiscoveryInProgress = SearchManager.IsAssetDiscoveryInProgress();
+	int32 UnindexedCount = SearchManager.GetNumberUnindexedAssets();
+
+	// Build the search term for FiB
+	FString SearchTerm;
+	if (!NodeClass.IsEmpty())
+	{
+		SearchTerm = NodeClass;
+	}
+	if (!FunctionName.IsEmpty())
+	{
+		if (!SearchTerm.IsEmpty())
+		{
+			SearchTerm += TEXT(" ");
+		}
+		SearchTerm += FunctionName;
+	}
+
+	// Only use FiB cache if indexing is complete
+	TArray<FSoftObjectPath> FiBMatches;
+	bool bUsedFiBCache = false;
+	if (!bCacheInProgress && !bDiscoveryInProgress && UnindexedCount == 0)
+	{
+		FiBMatches = FindMatchingBlueprintsViaFiB(SearchTerm, AssetPath);
+		bUsedFiBCache = FiBMatches.Num() > 0;
+	}
+
+	// Build result
+	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+	Result->SetStringField(TEXT("type"), TEXT("node"));
+	Result->SetStringField(TEXT("search_path"), AssetPath);
+	Result->SetBoolField(TEXT("used_fib_cache"), bUsedFiBCache);
+
+	// Add FiB cache status
+	TSharedPtr<FJsonObject> CacheStatusObj = MakeShareable(new FJsonObject);
+	CacheStatusObj->SetBoolField(TEXT("cache_in_progress"), bCacheInProgress);
+	CacheStatusObj->SetBoolField(TEXT("discovery_in_progress"), bDiscoveryInProgress);
+	CacheStatusObj->SetNumberField(TEXT("unindexed_count"), UnindexedCount);
+	CacheStatusObj->SetBoolField(TEXT("cache_ready"), !bCacheInProgress && !bDiscoveryInProgress && UnindexedCount == 0);
+	Result->SetObjectField(TEXT("fib_cache_status"), CacheStatusObj);
+
+	// Add search criteria
+	TSharedPtr<FJsonObject> SearchObj = MakeShareable(new FJsonObject);
+	if (!NodeClass.IsEmpty())
+	{
+		SearchObj->SetStringField(TEXT("node_class"), NodeClass);
+	}
+	if (!FunctionName.IsEmpty())
+	{
+		SearchObj->SetStringField(TEXT("function_name"), FunctionName);
+	}
+	Result->SetObjectField(TEXT("search"), SearchObj);
+
+	TArray<TSharedPtr<FJsonValue>> UsagesArray;
+	int32 BlueprintsSearched = 0;
+
+	// Determine which blueprints to search
+	TArray<FAssetData> BlueprintsToSearch;
+
+	if (bUsedFiBCache)
+	{
+		// Use FiB-filtered results - only load matching Blueprints
+		IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
+		for (const FSoftObjectPath& Path : FiBMatches)
+		{
+			FAssetData AssetData = AssetRegistry.GetAssetByObjectPath(Path);
+			if (AssetData.IsValid())
+			{
+				BlueprintsToSearch.Add(AssetData);
+			}
+		}
+		Result->SetNumberField(TEXT("fib_matches"), FiBMatches.Num());
+	}
+	else
+	{
+		// Fallback to loading all Blueprints in path (when cache not ready or no matches)
+		BlueprintsToSearch = GetBlueprintsInPath(AssetPath);
+	}
+
+	for (const FAssetData& AssetData : BlueprintsToSearch)
+	{
+		if (UsagesArray.Num() >= Limit)
+		{
+			break;
+		}
+
+		UBlueprint* Blueprint = Cast<UBlueprint>(AssetData.GetAsset());
+		if (!Blueprint)
+		{
+			continue;
+		}
+
+		BlueprintsSearched++;
+		FString BlueprintPath = AssetData.GetObjectPathString();
+
+		// Traverse all graphs
+		TArray<UEdGraph*> AllGraphs = GetAllGraphs(Blueprint);
+
+		for (UEdGraph* Graph : AllGraphs)
+		{
+			if (!Graph)
+			{
+				continue;
+			}
+
+			if (UsagesArray.Num() >= Limit)
+			{
+				break;
+			}
+
+			FString GraphType = GetGraphType(Blueprint, Graph);
+
+			for (UEdGraphNode* Node : Graph->Nodes)
+			{
+				if (UsagesArray.Num() >= Limit)
+				{
+					break;
+				}
+
+				bool bMatches = false;
+				FString MatchedFunctionName;
+
+				// Match by node class
+				if (!NodeClass.IsEmpty())
+				{
+					FString ActualClass = Node->GetClass()->GetName();
+					if (ActualClass == NodeClass || ActualClass.Contains(NodeClass))
+					{
+						bMatches = true;
+					}
+				}
+
+				// Match by function name (for CallFunction nodes)
+				if (!FunctionName.IsEmpty())
+				{
+					UK2Node_CallFunction* CallNode = Cast<UK2Node_CallFunction>(Node);
+					if (CallNode)
+					{
+						UFunction* Func = CallNode->GetTargetFunction();
+						if (Func && Func->GetName().Contains(FunctionName))
+						{
+							bMatches = true;
+							MatchedFunctionName = Func->GetName();
+						}
+					}
+				}
+
+				if (!bMatches)
+				{
+					continue;
+				}
+
+				// Build usage entry
+				TSharedPtr<FJsonObject> UsageObj = NodeReferenceToJson(Node, Graph, GraphType);
+				UsageObj->SetStringField(TEXT("blueprint"), BlueprintPath);
+
+				// Add function name if matched
+				if (!MatchedFunctionName.IsEmpty())
+				{
+					UsageObj->SetStringField(TEXT("function"), MatchedFunctionName);
+				}
+
+				// For CallFunction nodes, add target class
+				UK2Node_CallFunction* CallNode = Cast<UK2Node_CallFunction>(Node);
+				if (CallNode)
+				{
+					UFunction* Func = CallNode->GetTargetFunction();
+					if (Func && Func->GetOwnerClass())
+					{
+						UsageObj->SetStringField(TEXT("target_class"), Func->GetOwnerClass()->GetName());
+					}
+				}
+
+				UsagesArray.Add(MakeShareable(new FJsonValueObject(UsageObj)));
+			}
+		}
+	}
+
+	Result->SetArrayField(TEXT("usages"), UsagesArray);
+	Result->SetNumberField(TEXT("count"), UsagesArray.Num());
+	Result->SetNumberField(TEXT("blueprints_searched"), BlueprintsSearched);
+	Result->SetBoolField(TEXT("truncated"), UsagesArray.Num() >= Limit);
+
+	return FMcpToolResult::Json(Result);
+}
+
+FMcpToolResult UFindReferencesTool::FindNodeReferencesLegacy(const FString& AssetPath, const FString& NodeClass,
 													   const FString& FunctionName, int32 Limit)
 {
 	// Get Blueprints to search
