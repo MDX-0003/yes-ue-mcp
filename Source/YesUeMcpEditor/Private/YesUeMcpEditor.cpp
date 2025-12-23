@@ -23,6 +23,8 @@
 #include "Tools/Asset/InspectAssetTool.h"
 #include "Tools/References/FindReferencesTool.h"
 #include "Tools/Widget/WidgetBlueprintTool.h"
+#include "Tools/Material/MaterialGraphTool.h"
+#include "Tools/Material/MaterialParametersTool.h"
 
 DEFINE_LOG_CATEGORY(LogYesUeMcpEditor);
 
@@ -78,6 +80,10 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 
 	// Widget tools
 	Registry.RegisterToolClass(UWidgetBlueprintTool::StaticClass());
+
+	// Material tools
+	Registry.RegisterToolClass(UMaterialGraphTool::StaticClass());
+	Registry.RegisterToolClass(UMaterialParametersTool::StaticClass());
 
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("Registered %d MCP tools"), Registry.GetToolCount());
 }
