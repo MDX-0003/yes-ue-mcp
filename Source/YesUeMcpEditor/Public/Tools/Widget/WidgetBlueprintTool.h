@@ -13,6 +13,7 @@ class UWidgetBlueprint;
 class UCanvasPanelSlot;
 class UOverlaySlot;
 class UGridSlot;
+class UWidgetAnimation;
 
 /**
  * Tool for inspecting Widget Blueprint-specific data including
@@ -28,8 +29,8 @@ public:
 	virtual FString GetToolDescription() const override
 	{
 		return TEXT("Inspect Widget Blueprint-specific data including widget hierarchy from WidgetTree, "
-			"slot information (anchors, offsets, sizes), visibility settings, named slots, and property bindings. "
-			"Works only with Widget Blueprints (UserWidget subclasses).");
+			"slot information (anchors, offsets, sizes), visibility settings, named slots, property bindings, "
+			"and animations. Works only with Widget Blueprints (UserWidget subclasses).");
 	}
 
 	virtual TMap<FString, FMcpSchemaProperty> GetInputSchema() const override;
@@ -64,6 +65,9 @@ private:
 
 	/** Extract property bindings from widget blueprint */
 	TArray<TSharedPtr<FJsonValue>> ExtractBindings(UWidgetBlueprint* WidgetBP);
+
+	/** Extract animations from widget blueprint */
+	TArray<TSharedPtr<FJsonValue>> ExtractAnimations(UWidgetBlueprint* WidgetBP);
 
 	/** Get visibility as string */
 	static FString VisibilityToString(ESlateVisibility Visibility);

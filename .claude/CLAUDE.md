@@ -154,7 +154,7 @@ git branch -D release-temp
 ### Widget Tools
 | Tool | Description |
 |------|-------------|
-| `inspect-widget-blueprint` | Inspect Widget Blueprint hierarchy, slots (anchors, offsets, sizes), visibility, and property bindings |
+| `inspect-widget-blueprint` | Inspect Widget Blueprint hierarchy, slots (anchors, offsets, sizes), visibility, property bindings, and animations |
 
 ## Future Work
 

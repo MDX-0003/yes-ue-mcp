@@ -1,7 +1,11 @@
 // Copyright softdaddy-o 2024. All Rights Reserved.
 
 #include "Tools/Widget/WidgetBlueprintTool.h"
+#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 7
+#include "WidgetBlueprint.h"
+#else
 #include "Blueprint/WidgetBlueprint.h"
+#endif
 #include "Blueprint/WidgetTree.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Components/Widget.h"
@@ -22,6 +26,8 @@
 #include "Components/WrapBoxSlot.h"
 #include "Components/NamedSlot.h"
 #include "Binding/DynamicPropertyPath.h"
+#include "Animation/WidgetAnimation.h"
+#include "MovieScene.h"
 
 TMap<FString, FMcpSchemaProperty> UWidgetBlueprintTool::GetInputSchema() const
 {
@@ -166,6 +172,13 @@ FMcpToolResult UWidgetBlueprintTool::Execute(
 		{
 			Result->SetArrayField(TEXT("bindings"), BindingsArray);
 		}
+	}
+
+	// Animations
+	TArray<TSharedPtr<FJsonValue>> AnimationsArray = ExtractAnimations(WidgetBP);
+	if (AnimationsArray.Num() > 0)
+	{
+		Result->SetArrayField(TEXT("animations"), AnimationsArray);
 	}
 
 	return FMcpToolResult::Json(Result);
@@ -384,6 +397,8 @@ TSharedPtr<FJsonObject> UWidgetBlueprintTool::ExtractSlotInfo(UPanelSlot* Slot)
 		SlotObj->SetStringField(TEXT("horizontal_alignment"), HAlignToString(ScaleBoxSlot->GetHorizontalAlignment()));
 		SlotObj->SetStringField(TEXT("vertical_alignment"), VAlignToString(ScaleBoxSlot->GetVerticalAlignment()));
 
+#if !(ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 7)
+		// GetPadding() removed in UE 5.7
 		FMargin Padding = ScaleBoxSlot->GetPadding();
 		TSharedPtr<FJsonObject> PaddingObj = MakeShareable(new FJsonObject);
 		PaddingObj->SetNumberField(TEXT("left"), Padding.Left);
@@ -391,6 +406,7 @@ TSharedPtr<FJsonObject> UWidgetBlueprintTool::ExtractSlotInfo(UPanelSlot* Slot)
 		PaddingObj->SetNumberField(TEXT("right"), Padding.Right);
 		PaddingObj->SetNumberField(TEXT("bottom"), Padding.Bottom);
 		SlotObj->SetObjectField(TEXT("padding"), PaddingObj);
+#endif
 
 		return SlotObj;
 	}
@@ -418,6 +434,8 @@ TSharedPtr<FJsonObject> UWidgetBlueprintTool::ExtractSlotInfo(UPanelSlot* Slot)
 		SlotObj->SetStringField(TEXT("type"), TEXT("WrapBoxSlot"));
 		SlotObj->SetStringField(TEXT("horizontal_alignment"), HAlignToString(WrapBoxSlot->GetHorizontalAlignment()));
 		SlotObj->SetStringField(TEXT("vertical_alignment"), VAlignToString(WrapBoxSlot->GetVerticalAlignment()));
+#if !(ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 7)
+		// GetFillEmptySpace() and GetFillSpanWhenLessThan() removed in UE 5.7
 		SlotObj->SetBoolField(TEXT("fill_empty_space"), WrapBoxSlot->GetFillEmptySpace());
 		SlotObj->SetNumberField(TEXT("fill_span_when_less_than"), WrapBoxSlot->GetFillSpanWhenLessThan());
 
@@ -428,6 +446,7 @@ TSharedPtr<FJsonObject> UWidgetBlueprintTool::ExtractSlotInfo(UPanelSlot* Slot)
 		PaddingObj->SetNumberField(TEXT("right"), Padding.Right);
 		PaddingObj->SetNumberField(TEXT("bottom"), Padding.Bottom);
 		SlotObj->SetObjectField(TEXT("padding"), PaddingObj);
+#endif
 
 		return SlotObj;
 	}
@@ -681,6 +700,90 @@ TArray<TSharedPtr<FJsonValue>> UWidgetBlueprintTool::ExtractBindings(UWidgetBlue
 	}
 
 	return BindingsArray;
+}
+
+TArray<TSharedPtr<FJsonValue>> UWidgetBlueprintTool::ExtractAnimations(UWidgetBlueprint* WidgetBP)
+{
+	TArray<TSharedPtr<FJsonValue>> AnimationsArray;
+
+	if (!WidgetBP)
+	{
+		return AnimationsArray;
+	}
+
+	// UWidgetBlueprint has Animations property
+	for (UWidgetAnimation* Animation : WidgetBP->Animations)
+	{
+		if (!Animation)
+		{
+			continue;
+		}
+
+		TSharedPtr<FJsonObject> AnimObj = MakeShareable(new FJsonObject);
+		AnimObj->SetStringField(TEXT("name"), Animation->GetName());
+		AnimObj->SetStringField(TEXT("display_name"), Animation->GetDisplayName().ToString());
+
+		// Get movie scene for duration info
+		UMovieScene* MovieScene = Animation->GetMovieScene();
+		if (MovieScene)
+		{
+			// Duration in frames and seconds
+			FFrameRate TickResolution = MovieScene->GetTickResolution();
+			FFrameRate DisplayRate = MovieScene->GetDisplayRate();
+
+			TRange<FFrameNumber> PlaybackRange = MovieScene->GetPlaybackRange();
+			FFrameNumber StartFrame = PlaybackRange.GetLowerBoundValue();
+			FFrameNumber EndFrame = PlaybackRange.GetUpperBoundValue();
+
+			double StartSeconds = TickResolution.AsSeconds(StartFrame);
+			double EndSeconds = TickResolution.AsSeconds(EndFrame);
+			double Duration = EndSeconds - StartSeconds;
+
+			AnimObj->SetNumberField(TEXT("start_time"), StartSeconds);
+			AnimObj->SetNumberField(TEXT("end_time"), EndSeconds);
+			AnimObj->SetNumberField(TEXT("duration"), Duration);
+			AnimObj->SetNumberField(TEXT("display_rate_fps"), DisplayRate.AsDecimal());
+
+			// Track count
+			AnimObj->SetNumberField(TEXT("track_count"), MovieScene->GetMasterTracks().Num() + MovieScene->GetObjectBindings().Num());
+
+			// Get bound object names (which widgets are animated)
+			TArray<TSharedPtr<FJsonValue>> BoundObjectsArray;
+			for (const FMovieSceneBinding& Binding : MovieScene->GetBindings())
+			{
+				TSharedPtr<FJsonObject> BindingObj = MakeShareable(new FJsonObject);
+				BindingObj->SetStringField(TEXT("name"), Binding.GetName());
+				BindingObj->SetNumberField(TEXT("track_count"), Binding.GetTracks().Num());
+
+				// Get track types for this binding
+				TArray<TSharedPtr<FJsonValue>> TracksArray;
+				for (UMovieSceneTrack* Track : Binding.GetTracks())
+				{
+					if (Track)
+					{
+						TSharedPtr<FJsonObject> TrackObj = MakeShareable(new FJsonObject);
+						TrackObj->SetStringField(TEXT("type"), Track->GetClass()->GetName());
+						TrackObj->SetStringField(TEXT("display_name"), Track->GetDisplayName().ToString());
+						TracksArray.Add(MakeShareable(new FJsonValueObject(TrackObj)));
+					}
+				}
+				if (TracksArray.Num() > 0)
+				{
+					BindingObj->SetArrayField(TEXT("tracks"), TracksArray);
+				}
+
+				BoundObjectsArray.Add(MakeShareable(new FJsonValueObject(BindingObj)));
+			}
+			if (BoundObjectsArray.Num() > 0)
+			{
+				AnimObj->SetArrayField(TEXT("bound_objects"), BoundObjectsArray);
+			}
+		}
+
+		AnimationsArray.Add(MakeShareable(new FJsonValueObject(AnimObj)));
+	}
+
+	return AnimationsArray;
 }
 
 void UWidgetBlueprintTool::CollectWidgetNames(UWidget* Widget, TArray<FString>& OutNames)

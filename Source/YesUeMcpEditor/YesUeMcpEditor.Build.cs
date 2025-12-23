@@ -48,6 +48,9 @@ public class YesUeMcpEditor : ModuleRules
 			"UMGEditor",
 			"PropertyEditor",
 
+			// Animation/Sequencer (for UMG animations)
+			"MovieScene",
+
 			// JSON
 			"Json",
 			"JsonUtilities",
