@@ -112,7 +112,7 @@ git branch -D release-temp
 - **Port:** 8080 (configurable)
 - **CORS:** Enabled for cross-origin requests
 
-## Available Tools (19 total)
+## Available Tools (22 total)
 
 ### Asset Tools
 | Tool | Description |
@@ -156,13 +156,27 @@ git branch -D release-temp
 |------|-------------|
 | `inspect-widget-blueprint` | Inspect Widget Blueprint hierarchy, slots (anchors, offsets, sizes), visibility, property bindings, and animations |
 
+### Material Tools
+| Tool | Description |
+|------|-------------|
+| `get-material-graph` | Read complete Material expression graph structure |
+| `get-material-parameters` | Get material parameters (scalar, vector, texture, static switch) |
+
+### Debug Tools
+| Tool | Description |
+|------|-------------|
+| `get-logs` | Retrieve UE Output Log entries with filtering (category, severity, search) |
+
+## Logging
+
+All MCP tools log to the `LogYesUeMcp` category. Use `get-logs` with `category="LogYesUeMcp"` to debug tool execution.
+
 ## Future Work
 
 See GitHub Issues for planned features and enhancements.
 
 ### Potential Additions
 - Animation asset query (AnimBP, montages, notifies)
-- Material/shader graph inspection
 - AI behavior tree analysis
 - Write operations (spawn actors, modify properties)
 - Streaming support for large datasets
