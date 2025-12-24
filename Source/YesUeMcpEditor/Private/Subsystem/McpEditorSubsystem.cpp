@@ -3,6 +3,7 @@
 #include "Subsystem/McpEditorSubsystem.h"
 #include "Server/McpServer.h"
 #include "YesUeMcpEditor.h"
+#include "Log/McpLogCapture.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
 
@@ -13,6 +14,9 @@ void UMcpEditorSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	Super::Initialize(Collection);
 
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP Editor Subsystem initializing"));
+
+	// Initialize log capture before anything else
+	FMcpLogCapture::Get().Initialize();
 
 	LoadConfiguration();
 
@@ -32,6 +36,9 @@ void UMcpEditorSubsystem::Deinitialize()
 
 	StopServer();
 	Server.Reset();
+
+	// Shutdown log capture after server
+	FMcpLogCapture::Get().Shutdown();
 
 	Super::Deinitialize();
 }

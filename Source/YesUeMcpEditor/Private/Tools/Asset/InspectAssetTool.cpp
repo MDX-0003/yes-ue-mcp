@@ -4,6 +4,7 @@
 #include "Tools/McpToolResult.h"
 #include "UObject/UnrealType.h"
 #include "UObject/EnumProperty.h"
+#include "YesUeMcpEditor.h"
 
 FString UInspectAssetTool::GetToolDescription() const
 {
@@ -71,10 +72,14 @@ FMcpToolResult UInspectAssetTool::Execute(
 	FString PropertyFilter = GetStringArgOrDefault(Arguments, TEXT("property_filter"), TEXT(""));
 	FString CategoryFilter = GetStringArgOrDefault(Arguments, TEXT("category_filter"), TEXT(""));
 
+	UE_LOG(LogYesUeMcp, Log, TEXT("inspect-asset: path='%s', depth=%d, include_defaults=%s"),
+		*AssetPath, MaxDepth, bIncludeDefaults ? TEXT("true") : TEXT("false"));
+
 	// Load asset
 	UObject* Asset = LoadObject<UObject>(nullptr, *AssetPath);
 	if (!Asset)
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("inspect-asset: Failed to load asset at '%s'"), *AssetPath);
 		return FMcpToolResult::Error(FString::Printf(TEXT("Failed to load asset at path: %s"), *AssetPath));
 	}
 

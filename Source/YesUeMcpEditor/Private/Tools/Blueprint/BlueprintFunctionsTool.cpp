@@ -6,6 +6,7 @@
 #include "K2Node_FunctionEntry.h"
 #include "K2Node_FunctionResult.h"
 #include "EdGraphSchema_K2.h"
+#include "YesUeMcpEditor.h"
 
 TMap<FString, FMcpSchemaProperty> UBlueprintFunctionsTool::GetInputSchema() const
 {
@@ -30,9 +31,12 @@ FMcpToolResult UBlueprintFunctionsTool::Execute(
 		return FMcpToolResult::Error(TEXT("Missing required parameter: asset_path"));
 	}
 
+	UE_LOG(LogYesUeMcp, Log, TEXT("get-blueprint-functions: path='%s'"), *AssetPath);
+
 	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
 	if (!Blueprint)
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("get-blueprint-functions: Failed to load Blueprint '%s'"), *AssetPath);
 		return FMcpToolResult::Error(FString::Printf(TEXT("Failed to load Blueprint: %s"), *AssetPath));
 	}
 

@@ -13,6 +13,7 @@
 #include "FindInBlueprintManager.h"
 #include "FindInBlueprints.h"
 #include "ImaginaryBlueprintData.h"
+#include "YesUeMcpEditor.h"
 
 FString UFindReferencesTool::GetToolDescription() const
 {
@@ -105,6 +106,9 @@ FMcpToolResult UFindReferencesTool::Execute(
 	}
 
 	int32 Limit = GetIntArgOrDefault(Arguments, TEXT("limit"), 100);
+
+	UE_LOG(LogYesUeMcp, Log, TEXT("find-references: type='%s', path='%s', limit=%d"),
+		*Type, *AssetPath, Limit);
 
 	// Dispatch based on type
 	if (Type == TEXT("asset"))

@@ -4,6 +4,7 @@
 #include "Engine/DataTable.h"
 #include "Engine/DataAsset.h"
 #include "Tools/McpToolResult.h"
+#include "YesUeMcpEditor.h"
 
 FString UDataAssetTool::GetToolDescription() const
 {
@@ -48,6 +49,8 @@ FMcpToolResult UDataAssetTool::Execute(
 
 	// Optional row filter (for DataTables)
 	FString RowFilter = GetStringArgOrDefault(Arguments, TEXT("row_filter"), TEXT(""));
+
+	UE_LOG(LogYesUeMcp, Log, TEXT("inspect-data-asset: path='%s', row_filter='%s'"), *AssetPath, *RowFilter);
 
 	// Try loading as DataTable first
 	UDataTable* DataTable = LoadObject<UDataTable>(nullptr, *AssetPath);

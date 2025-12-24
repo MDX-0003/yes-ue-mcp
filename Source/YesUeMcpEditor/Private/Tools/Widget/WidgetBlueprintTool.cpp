@@ -28,6 +28,7 @@
 #include "Binding/DynamicPropertyPath.h"
 #include "Animation/WidgetAnimation.h"
 #include "MovieScene.h"
+#include "YesUeMcpEditor.h"
 
 TMap<FString, FMcpSchemaProperty> UWidgetBlueprintTool::GetInputSchema() const
 {
@@ -76,6 +77,9 @@ FMcpToolResult UWidgetBlueprintTool::Execute(
 	int32 DepthLimit = GetIntArgOrDefault(Arguments, TEXT("depth_limit"), -1);
 	bool bIncludeBindings = GetBoolArgOrDefault(Arguments, TEXT("include_bindings"), true);
 
+	UE_LOG(LogYesUeMcp, Log, TEXT("inspect-widget-blueprint: path='%s', depth_limit=%d"),
+		*AssetPath, DepthLimit);
+
 	// Load the Widget Blueprint
 	UWidgetBlueprint* WidgetBP = LoadObject<UWidgetBlueprint>(nullptr, *AssetPath);
 	if (!WidgetBP)
@@ -84,10 +88,12 @@ FMcpToolResult UWidgetBlueprintTool::Execute(
 		UBlueprint* RegularBP = LoadObject<UBlueprint>(nullptr, *AssetPath);
 		if (RegularBP)
 		{
+			UE_LOG(LogYesUeMcp, Warning, TEXT("inspect-widget-blueprint: '%s' is not a Widget Blueprint"), *AssetPath);
 			return FMcpToolResult::Error(FString::Printf(
 				TEXT("Asset '%s' is a Blueprint but not a Widget Blueprint. Use analyze-blueprint instead."),
 				*AssetPath));
 		}
+		UE_LOG(LogYesUeMcp, Warning, TEXT("inspect-widget-blueprint: Failed to load '%s'"), *AssetPath);
 		return FMcpToolResult::Error(FString::Printf(TEXT("Failed to load Widget Blueprint: %s"), *AssetPath));
 	}
 

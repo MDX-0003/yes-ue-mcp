@@ -6,6 +6,7 @@
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
 #include "Tools/McpToolResult.h"
+#include "YesUeMcpEditor.h"
 
 FString UBlueprintGraphTool::GetToolDescription() const
 {
@@ -65,6 +66,9 @@ FMcpToolResult UBlueprintGraphTool::Execute(
 	FString GraphTypeFilter = GetStringArgOrDefault(Arguments, TEXT("graph_type"), TEXT(""));
 	bool bIncludePositions = GetBoolArgOrDefault(Arguments, TEXT("include_positions"), false);
 
+	UE_LOG(LogYesUeMcp, Log, TEXT("get-blueprint-graph: path='%s', graph_name='%s', graph_type='%s'"),
+		*AssetPath, *GraphNameFilter, *GraphTypeFilter);
+
 	// Validate graph type filter
 	if (!GraphTypeFilter.IsEmpty() &&
 		GraphTypeFilter != TEXT("event") &&
@@ -79,6 +83,7 @@ FMcpToolResult UBlueprintGraphTool::Execute(
 	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
 	if (!Blueprint)
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("get-blueprint-graph: Failed to load Blueprint '%s'"), *AssetPath);
 		return FMcpToolResult::Error(FString::Printf(TEXT("Failed to load Blueprint at path: %s"), *AssetPath));
 	}
 

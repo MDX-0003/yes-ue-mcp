@@ -6,6 +6,7 @@
 #include "Modules/ModuleManager.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogYesUeMcpEditor, Log, All);
+DECLARE_LOG_CATEGORY_EXTERN(LogYesUeMcp, Log, All);
 
 class FYesUeMcpEditorModule : public IModuleInterface
 {

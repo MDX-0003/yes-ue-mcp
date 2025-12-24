@@ -7,6 +7,7 @@
 #include "GameFramework/Actor.h"
 #include "Components/ActorComponent.h"
 #include "Tools/McpToolResult.h"
+#include "YesUeMcpEditor.h"
 
 FString UQueryLevelTool::GetToolDescription() const
 {
@@ -98,6 +99,9 @@ FMcpToolResult UQueryLevelTool::Execute(
 	bool bIncludeComponents = GetBoolArgOrDefault(Arguments, TEXT("include_components"), false);
 	bool bIncludeTransform = GetBoolArgOrDefault(Arguments, TEXT("include_transform"), true);
 	int32 Limit = GetIntArgOrDefault(Arguments, TEXT("limit"), 100);
+
+	UE_LOG(LogYesUeMcp, Log, TEXT("query-level: class='%s', folder='%s', tag='%s', limit=%d"),
+		*ClassFilter, *FolderFilter, *TagFilter, Limit);
 
 	// Build result
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);

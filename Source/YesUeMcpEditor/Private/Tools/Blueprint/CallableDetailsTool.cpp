@@ -6,6 +6,7 @@
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
 #include "Tools/McpToolResult.h"
+#include "YesUeMcpEditor.h"
 
 FString UCallableDetailsTool::GetToolDescription() const
 {
@@ -63,10 +64,13 @@ FMcpToolResult UCallableDetailsTool::Execute(
 	// Optional parameter
 	bool bIncludePositions = GetBoolArgOrDefault(Arguments, TEXT("include_positions"), false);
 
+	UE_LOG(LogYesUeMcp, Log, TEXT("get-callable-details: path='%s', callable='%s'"), *AssetPath, *CallableName);
+
 	// Load Blueprint
 	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
 	if (!Blueprint)
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("get-callable-details: Failed to load Blueprint '%s'"), *AssetPath);
 		return FMcpToolResult::Error(FString::Printf(TEXT("Failed to load Blueprint at path: %s"), *AssetPath));
 	}
 
@@ -75,6 +79,7 @@ FMcpToolResult UCallableDetailsTool::Execute(
 	UEdGraph* Graph = FindGraphByName(Blueprint, CallableName, GraphType);
 	if (!Graph)
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("get-callable-details: Callable '%s' not found in Blueprint '%s'"), *CallableName, *AssetPath);
 		return FMcpToolResult::Error(FString::Printf(
 			TEXT("Callable '%s' not found in Blueprint. Make sure the name matches exactly."), *CallableName));
 	}

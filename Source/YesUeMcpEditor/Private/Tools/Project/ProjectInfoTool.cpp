@@ -3,6 +3,7 @@
 #include "Tools/Project/ProjectInfoTool.h"
 #include "Misc/Paths.h"
 #include "Interfaces/IPluginManager.h"
+#include "YesUeMcpEditor.h"
 
 FString UProjectInfoTool::GetToolDescription() const
 {
@@ -25,6 +26,8 @@ FMcpToolResult UProjectInfoTool::Execute(
 	const TSharedPtr<FJsonObject>& Arguments,
 	const FMcpToolContext& Context)
 {
+	UE_LOG(LogYesUeMcp, Log, TEXT("get-project-info: retrieving project information"));
+
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 
 	// Project information

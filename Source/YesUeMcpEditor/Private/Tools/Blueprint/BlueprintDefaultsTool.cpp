@@ -4,6 +4,7 @@
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "Tools/McpToolResult.h"
+#include "YesUeMcpEditor.h"
 
 FString UBlueprintDefaultsTool::GetToolDescription() const
 {
@@ -63,10 +64,14 @@ FMcpToolResult UBlueprintDefaultsTool::Execute(
 	FString CategoryFilter = GetStringArgOrDefault(Arguments, TEXT("category_filter"), TEXT(""));
 	bool bIncludeInherited = GetBoolArgOrDefault(Arguments, TEXT("include_inherited"), false);
 
+	UE_LOG(LogYesUeMcp, Log, TEXT("get-blueprint-defaults: path='%s', include_inherited=%s"),
+		*AssetPath, bIncludeInherited ? TEXT("true") : TEXT("false"));
+
 	// Load Blueprint
 	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
 	if (!Blueprint)
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("get-blueprint-defaults: Failed to load Blueprint '%s'"), *AssetPath);
 		return FMcpToolResult::Error(FString::Printf(TEXT("Failed to load Blueprint at path: %s"), *AssetPath));
 	}
 

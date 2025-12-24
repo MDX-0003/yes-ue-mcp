@@ -6,6 +6,7 @@
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
 #include "Tools/McpToolResult.h"
+#include "YesUeMcpEditor.h"
 
 FString UBlueprintNodeTool::GetToolDescription() const
 {
@@ -55,10 +56,13 @@ FMcpToolResult UBlueprintNodeTool::Execute(
 		return FMcpToolResult::Error(TEXT("Missing required parameter: node_guid"));
 	}
 
+	UE_LOG(LogYesUeMcp, Log, TEXT("get-blueprint-node: path='%s', guid='%s'"), *AssetPath, *NodeGuidStr);
+
 	// Parse GUID
 	FGuid NodeGuid;
 	if (!FGuid::Parse(NodeGuidStr, NodeGuid))
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("get-blueprint-node: Invalid GUID format '%s'"), *NodeGuidStr);
 		return FMcpToolResult::Error(FString::Printf(
 			TEXT("Invalid GUID format: %s"), *NodeGuidStr));
 	}
@@ -67,6 +71,7 @@ FMcpToolResult UBlueprintNodeTool::Execute(
 	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
 	if (!Blueprint)
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("get-blueprint-node: Failed to load Blueprint '%s'"), *AssetPath);
 		return FMcpToolResult::Error(FString::Printf(TEXT("Failed to load Blueprint at path: %s"), *AssetPath));
 	}
 
@@ -74,6 +79,7 @@ FMcpToolResult UBlueprintNodeTool::Execute(
 	UEdGraphNode* Node = FindNodeByGuid(Blueprint, NodeGuid);
 	if (!Node)
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("get-blueprint-node: Node '%s' not found in Blueprint '%s'"), *NodeGuidStr, *AssetPath);
 		return FMcpToolResult::Error(FString::Printf(
 			TEXT("Node with GUID %s not found in Blueprint %s"), *NodeGuidStr, *AssetPath));
 	}

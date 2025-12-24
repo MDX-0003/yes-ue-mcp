@@ -5,6 +5,7 @@
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "Tools/McpToolResult.h"
+#include "YesUeMcpEditor.h"
 
 FString UClassHierarchyTool::GetToolDescription() const
 {
@@ -64,6 +65,9 @@ FMcpToolResult UClassHierarchyTool::Execute(
 	bool bIncludeBlueprints = GetBoolArgOrDefault(Arguments, TEXT("include_blueprints"), true);
 	int32 MaxDepth = GetIntArgOrDefault(Arguments, TEXT("depth"), 10);
 
+	UE_LOG(LogYesUeMcp, Log, TEXT("get-class-hierarchy: class='%s', direction='%s', depth=%d"),
+		*ClassName, *Direction, MaxDepth);
+
 	// Validate direction
 	if (Direction != TEXT("parents") && Direction != TEXT("children") && Direction != TEXT("both"))
 	{
@@ -75,6 +79,7 @@ FMcpToolResult UClassHierarchyTool::Execute(
 	UClass* Class = FindClassByName(ClassName);
 	if (!Class)
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("get-class-hierarchy: Class '%s' not found"), *ClassName);
 		return FMcpToolResult::Error(FString::Printf(
 			TEXT("Class '%s' not found"), *ClassName));
 	}

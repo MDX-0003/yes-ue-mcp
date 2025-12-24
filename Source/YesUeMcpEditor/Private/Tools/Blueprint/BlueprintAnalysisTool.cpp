@@ -50,10 +50,14 @@ FMcpToolResult UBlueprintAnalysisTool::Execute(
 
 FMcpToolResult UBlueprintAnalysisTool::AnalyzeBlueprintInternal(const FString& AssetPath, bool bIncludeGraph)
 {
+	UE_LOG(LogYesUeMcp, Log, TEXT("analyze-blueprint: path='%s', include_graph=%s"),
+		*AssetPath, bIncludeGraph ? TEXT("true") : TEXT("false"));
+
 	// Load the blueprint
 	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
 	if (!Blueprint)
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("analyze-blueprint: Failed to load Blueprint at '%s'"), *AssetPath);
 		return FMcpToolResult::Error(FString::Printf(TEXT("Failed to load Blueprint: %s"), *AssetPath));
 	}
 

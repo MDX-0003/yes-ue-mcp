@@ -10,6 +10,7 @@
 #include "Materials/MaterialExpressionStaticSwitchParameter.h"
 #include "Materials/MaterialExpressionStaticBoolParameter.h"
 #include "Tools/McpToolResult.h"
+#include "YesUeMcpEditor.h"
 
 FString UMaterialParametersTool::GetToolDescription() const
 {
@@ -61,6 +62,9 @@ FMcpToolResult UMaterialParametersTool::Execute(
 	// Optional parameters
 	bool bIncludeDefaults = GetBoolArgOrDefault(Arguments, TEXT("include_defaults"), true);
 	FString ParameterFilter = GetStringArgOrDefault(Arguments, TEXT("parameter_filter"), TEXT(""));
+
+	UE_LOG(LogYesUeMcp, Log, TEXT("get-material-parameters: path='%s', filter='%s'"),
+		*AssetPath, *ParameterFilter);
 
 	// Build result
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);

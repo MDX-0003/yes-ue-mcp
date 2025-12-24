@@ -8,6 +8,7 @@
 #include "Components/ActorComponent.h"
 #include "Components/SceneComponent.h"
 #include "Tools/McpToolResult.h"
+#include "YesUeMcpEditor.h"
 
 FString UActorDetailsTool::GetToolDescription() const
 {
@@ -60,6 +61,8 @@ FMcpToolResult UActorDetailsTool::Execute(
 	bool bIncludeProperties = GetBoolArgOrDefault(Arguments, TEXT("include_properties"), true);
 	bool bIncludeComponents = GetBoolArgOrDefault(Arguments, TEXT("include_components"), true);
 
+	UE_LOG(LogYesUeMcp, Log, TEXT("get-actor-details: actor='%s'"), *ActorName);
+
 	// Get editor world
 	if (!GEditor)
 	{
@@ -70,6 +73,7 @@ FMcpToolResult UActorDetailsTool::Execute(
 	AActor* Actor = FindActorByName(ActorName);
 	if (!Actor)
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("get-actor-details: Actor '%s' not found"), *ActorName);
 		return FMcpToolResult::Error(FString::Printf(
 			TEXT("Actor '%s' not found in current level"), *ActorName));
 	}

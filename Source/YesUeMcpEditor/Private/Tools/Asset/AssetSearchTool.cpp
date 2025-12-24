@@ -3,6 +3,7 @@
 #include "Tools/Asset/AssetSearchTool.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
+#include "YesUeMcpEditor.h"
 
 TMap<FString, FMcpSchemaProperty> UAssetSearchTool::GetInputSchema() const
 {
@@ -44,9 +45,13 @@ FMcpToolResult UAssetSearchTool::Execute(
 	FString PathFilter = GetStringArgOrDefault(Arguments, TEXT("path"), TEXT(""));
 	int32 Limit = GetIntArgOrDefault(Arguments, TEXT("limit"), 100);
 
+	UE_LOG(LogYesUeMcp, Log, TEXT("search-assets: query='%s', class='%s', path='%s', limit=%d"),
+		*Query, *ClassFilter, *PathFilter, Limit);
+
 	// At least one filter must be specified
 	if (Query.IsEmpty() && ClassFilter.IsEmpty() && PathFilter.IsEmpty())
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("search-assets: No filter specified, returning error"));
 		return FMcpToolResult::Error(TEXT("At least one of 'query', 'class', or 'path' must be specified"));
 	}
 
@@ -84,9 +89,13 @@ FMcpToolResult UAssetSearchTool::Execute(
 		{
 			Filter.ClassPaths.Add(FilterClass->GetClassPathName());
 			Filter.bRecursiveClasses = true;
+			UE_LOG(LogYesUeMcp, Log, TEXT("search-assets: Resolved class '%s' -> %s"),
+				*ClassFilter, *FilterClass->GetClassPathName().ToString());
 		}
 		else
 		{
+			UE_LOG(LogYesUeMcp, Warning, TEXT("search-assets: Class '%s' not found (tried: %s, U%s, A%s)"),
+				*ClassFilter, *ClassFilter, *ClassFilter, *ClassFilter);
 			return FMcpToolResult::Error(FString::Printf(
 				TEXT("Asset class '%s' not found"), *ClassFilter));
 		}
@@ -95,6 +104,9 @@ FMcpToolResult UAssetSearchTool::Execute(
 	// Get assets
 	TArray<FAssetData> Assets;
 	AssetRegistry.GetAssets(Filter, Assets);
+
+	UE_LOG(LogYesUeMcp, Log, TEXT("search-assets: AssetRegistry returned %d assets (before name filter)"),
+		Assets.Num());
 
 	// Filter by name query if specified
 	if (!Query.IsEmpty())
@@ -112,6 +124,9 @@ FMcpToolResult UAssetSearchTool::Execute(
 			}
 		}
 		Assets = MoveTemp(FilteredAssets);
+
+		UE_LOG(LogYesUeMcp, Log, TEXT("search-assets: After name filter '%s': %d assets remain"),
+			*Query, Assets.Num());
 	}
 
 	// Apply limit

@@ -11,6 +11,7 @@
 #include "K2Node_Tunnel.h"
 #include "EdGraphSchema_K2.h"
 #include "Tools/McpToolResult.h"
+#include "YesUeMcpEditor.h"
 
 FString UBlueprintCallableListTool::GetToolDescription() const
 {
@@ -47,10 +48,13 @@ FMcpToolResult UBlueprintCallableListTool::Execute(
 		return FMcpToolResult::Error(TEXT("Missing required parameter: asset_path"));
 	}
 
+	UE_LOG(LogYesUeMcp, Log, TEXT("list-blueprint-callables: path='%s'"), *AssetPath);
+
 	// Load Blueprint
 	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
 	if (!Blueprint)
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("list-blueprint-callables: Failed to load Blueprint '%s'"), *AssetPath);
 		return FMcpToolResult::Error(FString::Printf(TEXT("Failed to load Blueprint at path: %s"), *AssetPath));
 	}
 

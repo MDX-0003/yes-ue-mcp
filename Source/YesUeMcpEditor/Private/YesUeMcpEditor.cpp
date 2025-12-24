@@ -25,8 +25,10 @@
 #include "Tools/Widget/WidgetBlueprintTool.h"
 #include "Tools/Material/MaterialGraphTool.h"
 #include "Tools/Material/MaterialParametersTool.h"
+#include "Tools/Debug/GetLogsTool.h"
 
 DEFINE_LOG_CATEGORY(LogYesUeMcpEditor);
+DEFINE_LOG_CATEGORY(LogYesUeMcp);
 
 #define LOCTEXT_NAMESPACE "FYesUeMcpEditorModule"
 
@@ -84,6 +86,9 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 	// Material tools
 	Registry.RegisterToolClass(UMaterialGraphTool::StaticClass());
 	Registry.RegisterToolClass(UMaterialParametersTool::StaticClass());
+
+	// Debug tools
+	Registry.RegisterToolClass(UGetLogsTool::StaticClass());
 
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("Registered %d MCP tools"), Registry.GetToolCount());
 }

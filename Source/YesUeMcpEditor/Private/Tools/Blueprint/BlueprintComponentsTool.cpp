@@ -5,6 +5,7 @@
 #include "Engine/SimpleConstructionScript.h"
 #include "Engine/SCS_Node.h"
 #include "Components/SceneComponent.h"
+#include "YesUeMcpEditor.h"
 
 TMap<FString, FMcpSchemaProperty> UBlueprintComponentsTool::GetInputSchema() const
 {
@@ -29,9 +30,12 @@ FMcpToolResult UBlueprintComponentsTool::Execute(
 		return FMcpToolResult::Error(TEXT("Missing required parameter: asset_path"));
 	}
 
+	UE_LOG(LogYesUeMcp, Log, TEXT("get-blueprint-components: path='%s'"), *AssetPath);
+
 	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
 	if (!Blueprint)
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("get-blueprint-components: Failed to load Blueprint '%s'"), *AssetPath);
 		return FMcpToolResult::Error(FString::Printf(TEXT("Failed to load Blueprint: %s"), *AssetPath));
 	}
 

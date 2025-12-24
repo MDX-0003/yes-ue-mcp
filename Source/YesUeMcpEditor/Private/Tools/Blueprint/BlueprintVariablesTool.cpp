@@ -4,6 +4,7 @@
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "Kismet2/BlueprintEditorUtils.h"
+#include "YesUeMcpEditor.h"
 
 TMap<FString, FMcpSchemaProperty> UBlueprintVariablesTool::GetInputSchema() const
 {
@@ -28,9 +29,12 @@ FMcpToolResult UBlueprintVariablesTool::Execute(
 		return FMcpToolResult::Error(TEXT("Missing required parameter: asset_path"));
 	}
 
+	UE_LOG(LogYesUeMcp, Log, TEXT("get-blueprint-variables: path='%s'"), *AssetPath);
+
 	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
 	if (!Blueprint)
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("get-blueprint-variables: Failed to load Blueprint '%s'"), *AssetPath);
 		return FMcpToolResult::Error(FString::Printf(TEXT("Failed to load Blueprint: %s"), *AssetPath));
 	}
 

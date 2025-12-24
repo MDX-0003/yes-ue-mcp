@@ -17,6 +17,7 @@
 #include "Materials/MaterialExpressionConstant4Vector.h"
 #include "Materials/MaterialFunction.h"
 #include "Tools/McpToolResult.h"
+#include "YesUeMcpEditor.h"
 
 FString UMaterialGraphTool::GetToolDescription() const
 {
@@ -61,6 +62,8 @@ FMcpToolResult UMaterialGraphTool::Execute(
 
 	// Optional parameters
 	bool bIncludePositions = GetBoolArgOrDefault(Arguments, TEXT("include_positions"), false);
+
+	UE_LOG(LogYesUeMcp, Log, TEXT("get-material-graph: path='%s'"), *AssetPath);
 
 	// Check if it's a MaterialInstance (which doesn't have a graph)
 	UMaterialInstance* MatInstance = LoadObject<UMaterialInstance>(nullptr, *AssetPath);

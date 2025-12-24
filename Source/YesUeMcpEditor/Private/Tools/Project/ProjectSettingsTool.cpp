@@ -7,6 +7,7 @@
 #include "GameplayTagsSettings.h"
 #include "GameMapsSettings.h"
 #include "Tools/McpToolResult.h"
+#include "YesUeMcpEditor.h"
 
 FString UProjectSettingsTool::GetToolDescription() const
 {
@@ -37,6 +38,8 @@ FMcpToolResult UProjectSettingsTool::Execute(
 {
 	FString Section = GetStringArgOrDefault(Arguments, TEXT("section"), TEXT("all"));
 	Section = Section.ToLower();
+
+	UE_LOG(LogYesUeMcp, Log, TEXT("get-project-settings: section='%s'"), *Section);
 
 	// Validate section
 	if (!Section.IsEmpty() &&
