@@ -1,5 +1,4 @@
 {
-  "enabledMcpjsonServers": ["unreal-elpis"],
   "permissions": {
     "allow": [
       "Bash(claude mcp list:*)",
@@ -26,7 +25,15 @@
       "Bash(dir:*)",
       "Bash(test:*)",
       "Bash(tasklist:*)",
-      "Bash(\"C:\\\\Program Files\\\\Epic Games\\\\UE_5.7\\\\Engine\\\\Build\\\\BatchFiles\\\\Build.bat\" ElpisClientEditor Win64 Development -Project=\"F:\\\\src3\\\\Covenant\\\\ElpisClient\\\\ElpisClient.uproject\" -Plugin=\"F:\\\\src3\\\\Covenant\\\\ElpisClient\\\\Plugins\\\\yes-ue-mcp\\\\YesUeMcp.uplugin\" -TargetType=Editor)"
+      "Bash(\"C:\\\\Program Files\\\\Epic Games\\\\UE_5.7\\\\Engine\\\\Build\\\\BatchFiles\\\\Build.bat\" ElpisClientEditor Win64 Development -Project=\"F:\\\\src3\\\\Covenant\\\\ElpisClient\\\\ElpisClient.uproject\" -Plugin=\"F:\\\\src3\\\\Covenant\\\\ElpisClient\\\\Plugins\\\\yes-ue-mcp\\\\YesUeMcp.uplugin\" -TargetType=Editor)",
+      "Bash(\"D:\\\\Program Files\\\\Epic Games\\\\UE_5.6\\\\Engine\\\\Build\\\\BatchFiles\\\\Build.bat\" GameAnimationSampleEditor Win64 Development -Project=\"F:\\\\src_ue5\\\\GameAnimationSample56\\\\GameAnimationSample.uproject\" -Plugin=\"F:\\\\src_ue5\\\\GameAnimationSample56\\\\Plugins\\\\yes-ue-mcp\\\\YesUeMcp.uplugin\" -TargetType=Editor)",
+      "Bash(findstr:*)",
+      "Bash(gh issue edit:*)",
+      "Bash(xargs file:*)",
+      "Bash(find:*)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "unreal-elpis"
+  ]
 }
