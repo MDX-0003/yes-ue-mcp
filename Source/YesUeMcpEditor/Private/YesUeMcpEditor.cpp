@@ -2,6 +2,7 @@
 
 #include "YesUeMcpEditor.h"
 #include "Tools/McpToolRegistry.h"
+#include "UI/McpToolbarExtension.h"
 
 // Include tool headers for registration
 #include "Tools/Blueprint/BlueprintAnalysisTool.h"
@@ -37,11 +38,17 @@ void FYesUeMcpEditorModule::StartupModule()
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("YesUeMcpEditor module starting up"));
 
 	RegisterBuiltInTools();
+
+	// Initialize toolbar status icon
+	FMcpToolbarExtension::Initialize();
 }
 
 void FYesUeMcpEditorModule::ShutdownModule()
 {
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("YesUeMcpEditor module shutting down"));
+
+	// Cleanup toolbar extension
+	FMcpToolbarExtension::Shutdown();
 }
 
 void FYesUeMcpEditorModule::RegisterBuiltInTools()

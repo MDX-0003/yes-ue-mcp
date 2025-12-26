@@ -118,23 +118,23 @@ FMcpToolResult UMaterialGraphTool::Execute(
 	}
 #else
 	// UE 5.6 and earlier
-	if (Material->HasEditorOnlyData())
+	if (UMaterialEditorOnlyData* EditorData = Material->GetEditorOnlyData())
 	{
-		MaterialOutputs->SetObjectField(TEXT("base_color"), MaterialOutputToJson(&Material->GetEditorOnlyData()->BaseColor, TEXT("BaseColor"), Material));
-		MaterialOutputs->SetObjectField(TEXT("metallic"), MaterialOutputToJson(&Material->GetEditorOnlyData()->Metallic, TEXT("Metallic"), Material));
-		MaterialOutputs->SetObjectField(TEXT("specular"), MaterialOutputToJson(&Material->GetEditorOnlyData()->Specular, TEXT("Specular"), Material));
-		MaterialOutputs->SetObjectField(TEXT("roughness"), MaterialOutputToJson(&Material->GetEditorOnlyData()->Roughness, TEXT("Roughness"), Material));
-		MaterialOutputs->SetObjectField(TEXT("anisotropy"), MaterialOutputToJson(&Material->GetEditorOnlyData()->Anisotropy, TEXT("Anisotropy"), Material));
-		MaterialOutputs->SetObjectField(TEXT("normal"), MaterialOutputToJson(&Material->GetEditorOnlyData()->Normal, TEXT("Normal"), Material));
-		MaterialOutputs->SetObjectField(TEXT("tangent"), MaterialOutputToJson(&Material->GetEditorOnlyData()->Tangent, TEXT("Tangent"), Material));
-		MaterialOutputs->SetObjectField(TEXT("emissive_color"), MaterialOutputToJson(&Material->GetEditorOnlyData()->EmissiveColor, TEXT("EmissiveColor"), Material));
-		MaterialOutputs->SetObjectField(TEXT("opacity"), MaterialOutputToJson(&Material->GetEditorOnlyData()->Opacity, TEXT("Opacity"), Material));
-		MaterialOutputs->SetObjectField(TEXT("opacity_mask"), MaterialOutputToJson(&Material->GetEditorOnlyData()->OpacityMask, TEXT("OpacityMask"), Material));
-		MaterialOutputs->SetObjectField(TEXT("world_position_offset"), MaterialOutputToJson(&Material->GetEditorOnlyData()->WorldPositionOffset, TEXT("WorldPositionOffset"), Material));
-		MaterialOutputs->SetObjectField(TEXT("subsurface_color"), MaterialOutputToJson(&Material->GetEditorOnlyData()->SubsurfaceColor, TEXT("SubsurfaceColor"), Material));
-		MaterialOutputs->SetObjectField(TEXT("ambient_occlusion"), MaterialOutputToJson(&Material->GetEditorOnlyData()->AmbientOcclusion, TEXT("AmbientOcclusion"), Material));
-		MaterialOutputs->SetObjectField(TEXT("refraction"), MaterialOutputToJson(&Material->GetEditorOnlyData()->Refraction, TEXT("Refraction"), Material));
-		MaterialOutputs->SetObjectField(TEXT("pixel_depth_offset"), MaterialOutputToJson(&Material->GetEditorOnlyData()->PixelDepthOffset, TEXT("PixelDepthOffset"), Material));
+		MaterialOutputs->SetObjectField(TEXT("base_color"), MaterialOutputToJson(&EditorData->BaseColor, TEXT("BaseColor"), Material));
+		MaterialOutputs->SetObjectField(TEXT("metallic"), MaterialOutputToJson(&EditorData->Metallic, TEXT("Metallic"), Material));
+		MaterialOutputs->SetObjectField(TEXT("specular"), MaterialOutputToJson(&EditorData->Specular, TEXT("Specular"), Material));
+		MaterialOutputs->SetObjectField(TEXT("roughness"), MaterialOutputToJson(&EditorData->Roughness, TEXT("Roughness"), Material));
+		MaterialOutputs->SetObjectField(TEXT("anisotropy"), MaterialOutputToJson(&EditorData->Anisotropy, TEXT("Anisotropy"), Material));
+		MaterialOutputs->SetObjectField(TEXT("normal"), MaterialOutputToJson(&EditorData->Normal, TEXT("Normal"), Material));
+		MaterialOutputs->SetObjectField(TEXT("tangent"), MaterialOutputToJson(&EditorData->Tangent, TEXT("Tangent"), Material));
+		MaterialOutputs->SetObjectField(TEXT("emissive_color"), MaterialOutputToJson(&EditorData->EmissiveColor, TEXT("EmissiveColor"), Material));
+		MaterialOutputs->SetObjectField(TEXT("opacity"), MaterialOutputToJson(&EditorData->Opacity, TEXT("Opacity"), Material));
+		MaterialOutputs->SetObjectField(TEXT("opacity_mask"), MaterialOutputToJson(&EditorData->OpacityMask, TEXT("OpacityMask"), Material));
+		MaterialOutputs->SetObjectField(TEXT("world_position_offset"), MaterialOutputToJson(&EditorData->WorldPositionOffset, TEXT("WorldPositionOffset"), Material));
+		MaterialOutputs->SetObjectField(TEXT("subsurface_color"), MaterialOutputToJson(&EditorData->SubsurfaceColor, TEXT("SubsurfaceColor"), Material));
+		MaterialOutputs->SetObjectField(TEXT("ambient_occlusion"), MaterialOutputToJson(&EditorData->AmbientOcclusion, TEXT("AmbientOcclusion"), Material));
+		MaterialOutputs->SetObjectField(TEXT("refraction"), MaterialOutputToJson(&EditorData->Refraction, TEXT("Refraction"), Material));
+		MaterialOutputs->SetObjectField(TEXT("pixel_depth_offset"), MaterialOutputToJson(&EditorData->PixelDepthOffset, TEXT("PixelDepthOffset"), Material));
 	}
 #endif
 

@@ -1,11 +1,7 @@
 // Copyright softdaddy-o 2024. All Rights Reserved.
 
 #include "Tools/Widget/WidgetBlueprintTool.h"
-#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 7
 #include "WidgetBlueprint.h"
-#else
-#include "Blueprint/WidgetBlueprint.h"
-#endif
 #include "Blueprint/WidgetTree.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Components/Widget.h"
@@ -403,16 +399,7 @@ TSharedPtr<FJsonObject> UWidgetBlueprintTool::ExtractSlotInfo(UPanelSlot* Slot)
 		SlotObj->SetStringField(TEXT("horizontal_alignment"), HAlignToString(ScaleBoxSlot->GetHorizontalAlignment()));
 		SlotObj->SetStringField(TEXT("vertical_alignment"), VAlignToString(ScaleBoxSlot->GetVerticalAlignment()));
 
-#if !(ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 7)
-		// GetPadding() removed in UE 5.7
-		FMargin Padding = ScaleBoxSlot->GetPadding();
-		TSharedPtr<FJsonObject> PaddingObj = MakeShareable(new FJsonObject);
-		PaddingObj->SetNumberField(TEXT("left"), Padding.Left);
-		PaddingObj->SetNumberField(TEXT("top"), Padding.Top);
-		PaddingObj->SetNumberField(TEXT("right"), Padding.Right);
-		PaddingObj->SetNumberField(TEXT("bottom"), Padding.Bottom);
-		SlotObj->SetObjectField(TEXT("padding"), PaddingObj);
-#endif
+		// Note: UScaleBoxSlot doesn't expose GetPadding() publicly in UE 5.6-5.7
 
 		return SlotObj;
 	}
@@ -440,19 +427,6 @@ TSharedPtr<FJsonObject> UWidgetBlueprintTool::ExtractSlotInfo(UPanelSlot* Slot)
 		SlotObj->SetStringField(TEXT("type"), TEXT("WrapBoxSlot"));
 		SlotObj->SetStringField(TEXT("horizontal_alignment"), HAlignToString(WrapBoxSlot->GetHorizontalAlignment()));
 		SlotObj->SetStringField(TEXT("vertical_alignment"), VAlignToString(WrapBoxSlot->GetVerticalAlignment()));
-#if !(ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 7)
-		// GetFillEmptySpace() and GetFillSpanWhenLessThan() removed in UE 5.7
-		SlotObj->SetBoolField(TEXT("fill_empty_space"), WrapBoxSlot->GetFillEmptySpace());
-		SlotObj->SetNumberField(TEXT("fill_span_when_less_than"), WrapBoxSlot->GetFillSpanWhenLessThan());
-
-		FMargin Padding = WrapBoxSlot->GetPadding();
-		TSharedPtr<FJsonObject> PaddingObj = MakeShareable(new FJsonObject);
-		PaddingObj->SetNumberField(TEXT("left"), Padding.Left);
-		PaddingObj->SetNumberField(TEXT("top"), Padding.Top);
-		PaddingObj->SetNumberField(TEXT("right"), Padding.Right);
-		PaddingObj->SetNumberField(TEXT("bottom"), Padding.Bottom);
-		SlotObj->SetObjectField(TEXT("padding"), PaddingObj);
-#endif
 
 		return SlotObj;
 	}
@@ -750,18 +724,13 @@ TArray<TSharedPtr<FJsonValue>> UWidgetBlueprintTool::ExtractAnimations(UWidgetBl
 			AnimObj->SetNumberField(TEXT("duration"), Duration);
 			AnimObj->SetNumberField(TEXT("display_rate_fps"), DisplayRate.AsDecimal());
 
-			// Track count - API changed in UE 5.7
-#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 7
-			// UE 5.7+ uses different API
+			// Track count - count bindings' tracks
 			int32 TotalTracks = 0;
 			for (const FMovieSceneBinding& Binding : MovieScene->GetBindings())
 			{
 				TotalTracks += Binding.GetTracks().Num();
 			}
 			AnimObj->SetNumberField(TEXT("track_count"), TotalTracks);
-#else
-			AnimObj->SetNumberField(TEXT("track_count"), MovieScene->GetMasterTracks().Num() + MovieScene->GetObjectBindings().Num());
-#endif
 
 			// Get bound object names (which widgets are animated)
 			TArray<TSharedPtr<FJsonValue>> BoundObjectsArray;

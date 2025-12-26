@@ -28,6 +28,7 @@ public class YesUeMcpEditor : ModuleRules
 			"ToolMenus",
 			"Slate",
 			"SlateCore",
+			"StatusBar",
 
 			// Blueprint/Kismet
 			"Kismet",
