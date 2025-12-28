@@ -118,10 +118,6 @@ FSlateColor FMcpToolbarExtension::GetStatusColor()
 
 	if (Subsystem->IsServerRunning())
 	{
-		if (Subsystem->IsUsingFallbackPort())
-		{
-			return FSlateColor(FLinearColor(1.0f, 0.8f, 0.0f)); // Yellow/Orange
-		}
 		return FSlateColor(FLinearColor::Green);
 	}
 
@@ -146,18 +142,12 @@ FText FMcpToolbarExtension::GetStatusTooltip()
 	if (Subsystem->IsServerRunning())
 	{
 		int32 Port = Subsystem->GetActualPort();
-		if (Subsystem->IsUsingFallbackPort())
-		{
-			Status = FString::Printf(TEXT("Running on fallback port %d"), Port);
-		}
-		else
-		{
-			Status = FString::Printf(TEXT("Running on port %d"), Port);
-		}
+		Status = FString::Printf(TEXT("Running on port %d"), Port);
 	}
 	else
 	{
-		Status = TEXT("Stopped");
+		int32 ConfiguredPort = Subsystem->GetSettings() ? Subsystem->GetSettings()->ServerPort : 8080;
+		Status = FString::Printf(TEXT("Stopped (port %d may be in use)"), ConfiguredPort);
 	}
 
 	return FText::Format(
