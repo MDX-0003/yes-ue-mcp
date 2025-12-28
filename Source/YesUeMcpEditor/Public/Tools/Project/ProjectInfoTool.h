@@ -7,8 +7,8 @@
 #include "ProjectInfoTool.generated.h"
 
 /**
- * Tool for retrieving basic project and plugin information.
- * Returns project name, path, and plugin version.
+ * Tool for retrieving project and plugin information.
+ * Returns project name, path, plugin version, and optionally project settings.
  */
 UCLASS()
 class YESUEMCPEDITOR_API UProjectInfoTool : public UMcpToolBase
@@ -24,4 +24,17 @@ public:
 	virtual FMcpToolResult Execute(
 		const TSharedPtr<FJsonObject>& Arguments,
 		const FMcpToolContext& Context) override;
+
+private:
+	/** Get input mappings (actions and axes) */
+	TSharedPtr<FJsonObject> GetInputMappings() const;
+
+	/** Get collision settings */
+	TSharedPtr<FJsonObject> GetCollisionSettings() const;
+
+	/** Get gameplay tags */
+	TSharedPtr<FJsonObject> GetGameplayTags() const;
+
+	/** Get default maps and game modes */
+	TSharedPtr<FJsonObject> GetDefaultMapsAndModes() const;
 };

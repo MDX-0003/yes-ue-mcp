@@ -7,7 +7,8 @@
 #include "QueryLevelTool.generated.h"
 
 /**
- * Tool for querying actors in the currently open level
+ * Tool for querying actors in the currently open level.
+ * Can list actors with filtering, or get detailed info for a specific actor.
  */
 UCLASS()
 class YESUEMCPEDITOR_API UQueryLevelTool : public UMcpToolBase
@@ -25,11 +26,10 @@ public:
 		const FMcpToolContext& Context) override;
 
 private:
-	/** Convert actor to JSON */
-	TSharedPtr<FJsonObject> ActorToJson(class AActor* Actor, bool bIncludeComponents, bool bIncludeTransform) const;
+	// === List mode (multiple actors) ===
 
-	/** Get transform as JSON */
-	TSharedPtr<FJsonObject> TransformToJson(const FTransform& Transform) const;
+	/** Convert actor to basic JSON for list mode */
+	TSharedPtr<FJsonObject> ActorToJson(class AActor* Actor, bool bIncludeComponents, bool bIncludeTransform) const;
 
 	/** Check if actor matches class filter (wildcard support) */
 	bool MatchesClassFilter(class AActor* Actor, const FString& Filter) const;
@@ -42,4 +42,26 @@ private:
 
 	/** Check if string matches wildcard pattern */
 	bool MatchesWildcard(const FString& Name, const FString& Pattern) const;
+
+	// === Detail mode (single actor) ===
+
+	/** Find actor by name in the current level */
+	class AActor* FindActorByName(const FString& ActorName) const;
+
+	/** Convert actor to detailed JSON with properties */
+	TSharedPtr<FJsonObject> ActorToDetailedJson(class AActor* Actor, bool bIncludeProperties, bool bIncludeComponents) const;
+
+	/** Convert component to detailed JSON */
+	TSharedPtr<FJsonObject> ComponentToDetailedJson(class UActorComponent* Component, bool bIncludeProperties) const;
+
+	/** Convert property to JSON */
+	TSharedPtr<FJsonObject> PropertyToJson(class FProperty* Property, void* ValuePtr, UObject* Owner) const;
+
+	/** Get property type as string */
+	FString GetPropertyTypeString(class FProperty* Property) const;
+
+	// === Shared ===
+
+	/** Get transform as JSON */
+	TSharedPtr<FJsonObject> TransformToJson(const FTransform& Transform) const;
 };

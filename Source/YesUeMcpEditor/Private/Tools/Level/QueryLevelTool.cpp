@@ -6,19 +6,29 @@
 #include "Engine/Level.h"
 #include "GameFramework/Actor.h"
 #include "Components/ActorComponent.h"
+#include "Components/SceneComponent.h"
 #include "Tools/McpToolResult.h"
 #include "YesUeMcpEditor.h"
 
 FString UQueryLevelTool::GetToolDescription() const
 {
-	return TEXT("List actors in the currently open level with filtering options. "\
-		"Returns actor names, classes, transforms, and optionally components.");
+	return TEXT("List actors in the currently open level with filtering options. "
+		"Returns actor names, classes, transforms, and optionally components. "
+		"When actor_name is specified, returns detailed info for that specific actor including properties.");
 }
 
 TMap<FString, FMcpSchemaProperty> UQueryLevelTool::GetInputSchema() const
 {
 	TMap<FString, FMcpSchemaProperty> Schema;
 
+	// Detail mode parameter
+	FMcpSchemaProperty ActorName;
+	ActorName.Type = TEXT("string");
+	ActorName.Description = TEXT("Get detailed info for a specific actor by name. When specified, other filters are ignored.");
+	ActorName.bRequired = false;
+	Schema.Add(TEXT("actor_name"), ActorName);
+
+	// List mode parameters
 	FMcpSchemaProperty ClassFilter;
 	ClassFilter.Type = TEXT("string");
 	ClassFilter.Description = TEXT("Filter by actor class (wildcards supported, e.g., '*Light*', 'StaticMeshActor')");
@@ -43,9 +53,10 @@ TMap<FString, FMcpSchemaProperty> UQueryLevelTool::GetInputSchema() const
 	IncludeHidden.bRequired = false;
 	Schema.Add(TEXT("include_hidden"), IncludeHidden);
 
+	// Shared parameters
 	FMcpSchemaProperty IncludeComponents;
 	IncludeComponents.Type = TEXT("boolean");
-	IncludeComponents.Description = TEXT("Include component list for each actor (default: false)");
+	IncludeComponents.Description = TEXT("Include component list for each actor (default: false for list mode, true for detail mode)");
 	IncludeComponents.bRequired = false;
 	Schema.Add(TEXT("include_components"), IncludeComponents);
 
@@ -55,6 +66,14 @@ TMap<FString, FMcpSchemaProperty> UQueryLevelTool::GetInputSchema() const
 	IncludeTransform.bRequired = false;
 	Schema.Add(TEXT("include_transform"), IncludeTransform);
 
+	// Detail mode parameters
+	FMcpSchemaProperty IncludeProperties;
+	IncludeProperties.Type = TEXT("boolean");
+	IncludeProperties.Description = TEXT("Include actor properties via reflection (default: true in detail mode)");
+	IncludeProperties.bRequired = false;
+	Schema.Add(TEXT("include_properties"), IncludeProperties);
+
+	// List mode parameters
 	FMcpSchemaProperty Limit;
 	Limit.Type = TEXT("integer");
 	Limit.Description = TEXT("Maximum number of results to return (default: 100)");
@@ -91,7 +110,28 @@ FMcpToolResult UQueryLevelTool::Execute(
 		return FMcpToolResult::Error(TEXT("No persistent level found"));
 	}
 
-	// Get optional parameters
+	// Check for detail mode (specific actor)
+	FString ActorName = GetStringArgOrDefault(Arguments, TEXT("actor_name"), TEXT(""));
+	if (!ActorName.IsEmpty())
+	{
+		// Detail mode - return detailed info for specific actor
+		UE_LOG(LogYesUeMcp, Log, TEXT("query-level: detail mode for actor='%s'"), *ActorName);
+
+		AActor* Actor = FindActorByName(ActorName);
+		if (!Actor)
+		{
+			return FMcpToolResult::Error(FString::Printf(
+				TEXT("Actor '%s' not found in current level"), *ActorName));
+		}
+
+		bool bIncludeProperties = GetBoolArgOrDefault(Arguments, TEXT("include_properties"), true);
+		bool bIncludeComponents = GetBoolArgOrDefault(Arguments, TEXT("include_components"), true);
+
+		TSharedPtr<FJsonObject> Result = ActorToDetailedJson(Actor, bIncludeProperties, bIncludeComponents);
+		return FMcpToolResult::Json(Result);
+	}
+
+	// List mode - return filtered list of actors
 	FString ClassFilter = GetStringArgOrDefault(Arguments, TEXT("class_filter"), TEXT(""));
 	FString FolderFilter = GetStringArgOrDefault(Arguments, TEXT("folder_filter"), TEXT(""));
 	FString TagFilter = GetStringArgOrDefault(Arguments, TEXT("tag_filter"), TEXT(""));
@@ -100,7 +140,7 @@ FMcpToolResult UQueryLevelTool::Execute(
 	bool bIncludeTransform = GetBoolArgOrDefault(Arguments, TEXT("include_transform"), true);
 	int32 Limit = GetIntArgOrDefault(Arguments, TEXT("limit"), 100);
 
-	UE_LOG(LogYesUeMcp, Log, TEXT("query-level: class='%s', folder='%s', tag='%s', limit=%d"),
+	UE_LOG(LogYesUeMcp, Log, TEXT("query-level: list mode class='%s', folder='%s', tag='%s', limit=%d"),
 		*ClassFilter, *FolderFilter, *TagFilter, Limit);
 
 	// Build result
@@ -167,6 +207,8 @@ FMcpToolResult UQueryLevelTool::Execute(
 	return FMcpToolResult::Json(Result);
 }
 
+// === List mode helpers ===
+
 TSharedPtr<FJsonObject> UQueryLevelTool::ActorToJson(AActor* Actor, bool bIncludeComponents, bool bIncludeTransform) const
 {
 	if (!Actor)
@@ -209,7 +251,7 @@ TSharedPtr<FJsonObject> UQueryLevelTool::ActorToJson(AActor* Actor, bool bInclud
 		ActorJson->SetObjectField(TEXT("transform"), TransformToJson(Actor->GetActorTransform()));
 	}
 
-	// Components
+	// Components (basic info)
 	if (bIncludeComponents)
 	{
 		TArray<TSharedPtr<FJsonValue>> ComponentsArray;
@@ -236,35 +278,6 @@ TSharedPtr<FJsonObject> UQueryLevelTool::ActorToJson(AActor* Actor, bool bInclud
 	}
 
 	return ActorJson;
-}
-
-TSharedPtr<FJsonObject> UQueryLevelTool::TransformToJson(const FTransform& Transform) const
-{
-	TSharedPtr<FJsonObject> TransformJson = MakeShareable(new FJsonObject);
-
-	// Location
-	TSharedPtr<FJsonObject> LocationJson = MakeShareable(new FJsonObject);
-	LocationJson->SetNumberField(TEXT("x"), Transform.GetLocation().X);
-	LocationJson->SetNumberField(TEXT("y"), Transform.GetLocation().Y);
-	LocationJson->SetNumberField(TEXT("z"), Transform.GetLocation().Z);
-	TransformJson->SetObjectField(TEXT("location"), LocationJson);
-
-	// Rotation
-	TSharedPtr<FJsonObject> RotationJson = MakeShareable(new FJsonObject);
-	FRotator Rotator = Transform.Rotator();
-	RotationJson->SetNumberField(TEXT("pitch"), Rotator.Pitch);
-	RotationJson->SetNumberField(TEXT("yaw"), Rotator.Yaw);
-	RotationJson->SetNumberField(TEXT("roll"), Rotator.Roll);
-	TransformJson->SetObjectField(TEXT("rotation"), RotationJson);
-
-	// Scale
-	TSharedPtr<FJsonObject> ScaleJson = MakeShareable(new FJsonObject);
-	ScaleJson->SetNumberField(TEXT("x"), Transform.GetScale3D().X);
-	ScaleJson->SetNumberField(TEXT("y"), Transform.GetScale3D().Y);
-	ScaleJson->SetNumberField(TEXT("z"), Transform.GetScale3D().Z);
-	TransformJson->SetObjectField(TEXT("scale"), ScaleJson);
-
-	return TransformJson;
 }
 
 bool UQueryLevelTool::MatchesClassFilter(AActor* Actor, const FString& Filter) const
@@ -345,4 +358,381 @@ bool UQueryLevelTool::MatchesWildcard(const FString& Name, const FString& Patter
 
 	// Exact match
 	return Name.Equals(Pattern, ESearchCase::IgnoreCase);
+}
+
+// === Detail mode helpers ===
+
+AActor* UQueryLevelTool::FindActorByName(const FString& ActorName) const
+{
+	if (!GEditor)
+	{
+		return nullptr;
+	}
+
+	UWorld* World = GEditor->GetEditorWorldContext().World();
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	ULevel* Level = World->PersistentLevel;
+	if (!Level)
+	{
+		return nullptr;
+	}
+
+	// Search for actor by name or label
+	for (AActor* Actor : Level->Actors)
+	{
+		if (!Actor)
+		{
+			continue;
+		}
+
+		if (Actor->GetName().Equals(ActorName, ESearchCase::IgnoreCase) ||
+			Actor->GetActorLabel().Equals(ActorName, ESearchCase::IgnoreCase))
+		{
+			return Actor;
+		}
+	}
+
+	return nullptr;
+}
+
+TSharedPtr<FJsonObject> UQueryLevelTool::ActorToDetailedJson(AActor* Actor, bool bIncludeProperties, bool bIncludeComponents) const
+{
+	if (!Actor)
+	{
+		return nullptr;
+	}
+
+	TSharedPtr<FJsonObject> ActorJson = MakeShareable(new FJsonObject);
+
+	// Basic info
+	ActorJson->SetStringField(TEXT("name"), Actor->GetName());
+	ActorJson->SetStringField(TEXT("label"), Actor->GetActorLabel());
+	ActorJson->SetStringField(TEXT("class"), Actor->GetClass()->GetName());
+
+	// Parent class hierarchy
+	TArray<TSharedPtr<FJsonValue>> ParentClassesArray;
+	UClass* CurrentClass = Actor->GetClass()->GetSuperClass();
+	while (CurrentClass && CurrentClass != UObject::StaticClass())
+	{
+		ParentClassesArray.Add(MakeShareable(new FJsonValueString(CurrentClass->GetName())));
+		CurrentClass = CurrentClass->GetSuperClass();
+	}
+	if (ParentClassesArray.Num() > 0)
+	{
+		ActorJson->SetArrayField(TEXT("parent_classes"), ParentClassesArray);
+	}
+
+	// Actor state
+	ActorJson->SetBoolField(TEXT("is_hidden"), Actor->IsHidden());
+	ActorJson->SetBoolField(TEXT("is_selected"), Actor->IsSelected());
+	ActorJson->SetBoolField(TEXT("is_editor_only"), Actor->IsEditorOnly());
+
+	// Folder
+	FName FolderPath = Actor->GetFolderPath();
+	if (FolderPath != NAME_None)
+	{
+		ActorJson->SetStringField(TEXT("folder"), FolderPath.ToString());
+	}
+
+	// Tags
+	if (Actor->Tags.Num() > 0)
+	{
+		TArray<TSharedPtr<FJsonValue>> TagsArray;
+		for (const FName& Tag : Actor->Tags)
+		{
+			TagsArray.Add(MakeShareable(new FJsonValueString(Tag.ToString())));
+		}
+		ActorJson->SetArrayField(TEXT("tags"), TagsArray);
+	}
+
+	// Transform
+	ActorJson->SetObjectField(TEXT("transform"), TransformToJson(Actor->GetActorTransform()));
+
+	// Properties
+	if (bIncludeProperties)
+	{
+		TArray<TSharedPtr<FJsonValue>> PropertiesArray;
+
+		for (TFieldIterator<FProperty> PropIt(Actor->GetClass(), EFieldIteratorFlags::ExcludeSuper); PropIt; ++PropIt)
+		{
+			FProperty* Property = *PropIt;
+			if (!Property)
+			{
+				continue;
+			}
+
+			// Skip some internal properties
+			FString PropertyName = Property->GetName();
+			if (PropertyName.StartsWith(TEXT("b")) && PropertyName.Contains(TEXT("Internal")))
+			{
+				continue;
+			}
+
+			void* ValuePtr = Property->ContainerPtrToValuePtr<void>(Actor);
+			if (!ValuePtr)
+			{
+				continue;
+			}
+
+			TSharedPtr<FJsonObject> PropertyJson = PropertyToJson(Property, ValuePtr, Actor);
+			if (PropertyJson.IsValid())
+			{
+				PropertiesArray.Add(MakeShareable(new FJsonValueObject(PropertyJson)));
+			}
+		}
+
+		ActorJson->SetArrayField(TEXT("properties"), PropertiesArray);
+		ActorJson->SetNumberField(TEXT("property_count"), PropertiesArray.Num());
+	}
+
+	// Components (detailed)
+	if (bIncludeComponents)
+	{
+		TArray<TSharedPtr<FJsonValue>> ComponentsArray;
+		TArray<UActorComponent*> Components;
+		Actor->GetComponents(Components);
+
+		for (UActorComponent* Component : Components)
+		{
+			if (!Component)
+			{
+				continue;
+			}
+
+			TSharedPtr<FJsonObject> ComponentJson = ComponentToDetailedJson(Component, bIncludeProperties);
+			if (ComponentJson.IsValid())
+			{
+				ComponentsArray.Add(MakeShareable(new FJsonValueObject(ComponentJson)));
+			}
+		}
+
+		ActorJson->SetArrayField(TEXT("components"), ComponentsArray);
+		ActorJson->SetNumberField(TEXT("component_count"), ComponentsArray.Num());
+	}
+
+	return ActorJson;
+}
+
+TSharedPtr<FJsonObject> UQueryLevelTool::ComponentToDetailedJson(UActorComponent* Component, bool bIncludeProperties) const
+{
+	if (!Component)
+	{
+		return nullptr;
+	}
+
+	TSharedPtr<FJsonObject> ComponentJson = MakeShareable(new FJsonObject);
+
+	// Basic info
+	ComponentJson->SetStringField(TEXT("name"), Component->GetName());
+	ComponentJson->SetStringField(TEXT("class"), Component->GetClass()->GetName());
+	ComponentJson->SetBoolField(TEXT("is_active"), Component->IsActive());
+	ComponentJson->SetBoolField(TEXT("is_editor_only"), Component->IsEditorOnly());
+
+	// Scene component specific
+	if (USceneComponent* SceneComponent = Cast<USceneComponent>(Component))
+	{
+		ComponentJson->SetBoolField(TEXT("is_scene_component"), true);
+
+		// Relative transform
+		ComponentJson->SetObjectField(TEXT("relative_transform"), TransformToJson(SceneComponent->GetRelativeTransform()));
+
+		// World transform
+		ComponentJson->SetObjectField(TEXT("world_transform"), TransformToJson(SceneComponent->GetComponentTransform()));
+
+		// Mobility
+		FString Mobility;
+		switch (SceneComponent->Mobility)
+		{
+		case EComponentMobility::Static:
+			Mobility = TEXT("Static");
+			break;
+		case EComponentMobility::Stationary:
+			Mobility = TEXT("Stationary");
+			break;
+		case EComponentMobility::Movable:
+			Mobility = TEXT("Movable");
+			break;
+		default:
+			Mobility = TEXT("Unknown");
+		}
+		ComponentJson->SetStringField(TEXT("mobility"), Mobility);
+
+		// Parent component
+		if (SceneComponent->GetAttachParent())
+		{
+			ComponentJson->SetStringField(TEXT("parent_component"), SceneComponent->GetAttachParent()->GetName());
+		}
+
+		// Child components
+		TArray<USceneComponent*> ChildComponents = SceneComponent->GetAttachChildren();
+		if (ChildComponents.Num() > 0)
+		{
+			TArray<TSharedPtr<FJsonValue>> ChildrenArray;
+			for (USceneComponent* Child : ChildComponents)
+			{
+				if (Child)
+				{
+					ChildrenArray.Add(MakeShareable(new FJsonValueString(Child->GetName())));
+				}
+			}
+			ComponentJson->SetArrayField(TEXT("child_components"), ChildrenArray);
+		}
+	}
+	else
+	{
+		ComponentJson->SetBoolField(TEXT("is_scene_component"), false);
+	}
+
+	// Properties
+	if (bIncludeProperties)
+	{
+		TArray<TSharedPtr<FJsonValue>> PropertiesArray;
+
+		for (TFieldIterator<FProperty> PropIt(Component->GetClass(), EFieldIteratorFlags::ExcludeSuper); PropIt; ++PropIt)
+		{
+			FProperty* Property = *PropIt;
+			if (!Property)
+			{
+				continue;
+			}
+
+			void* ValuePtr = Property->ContainerPtrToValuePtr<void>(Component);
+			if (!ValuePtr)
+			{
+				continue;
+			}
+
+			TSharedPtr<FJsonObject> PropertyJson = PropertyToJson(Property, ValuePtr, Component);
+			if (PropertyJson.IsValid())
+			{
+				PropertiesArray.Add(MakeShareable(new FJsonValueObject(PropertyJson)));
+			}
+		}
+
+		ComponentJson->SetArrayField(TEXT("properties"), PropertiesArray);
+		ComponentJson->SetNumberField(TEXT("property_count"), PropertiesArray.Num());
+	}
+
+	return ComponentJson;
+}
+
+TSharedPtr<FJsonObject> UQueryLevelTool::PropertyToJson(FProperty* Property, void* ValuePtr, UObject* Owner) const
+{
+	if (!Property || !ValuePtr)
+	{
+		return nullptr;
+	}
+
+	TSharedPtr<FJsonObject> PropertyJson = MakeShareable(new FJsonObject);
+
+	// Basic info
+	PropertyJson->SetStringField(TEXT("name"), Property->GetName());
+	PropertyJson->SetStringField(TEXT("type"), GetPropertyTypeString(Property));
+
+	// Category
+	FString Category = Property->GetMetaData(TEXT("Category"));
+	if (!Category.IsEmpty())
+	{
+		PropertyJson->SetStringField(TEXT("category"), Category);
+	}
+
+	// Export value as string
+	FString Value;
+	Property->ExportText_Direct(Value, ValuePtr, ValuePtr, Owner, PPF_None);
+	PropertyJson->SetStringField(TEXT("value"), Value);
+
+	return PropertyJson;
+}
+
+FString UQueryLevelTool::GetPropertyTypeString(FProperty* Property) const
+{
+	if (!Property)
+	{
+		return TEXT("unknown");
+	}
+
+	// Check for specific property types
+	if (Property->IsA<FBoolProperty>())
+	{
+		return TEXT("bool");
+	}
+	else if (Property->IsA<FIntProperty>())
+	{
+		return TEXT("int32");
+	}
+	else if (Property->IsA<FFloatProperty>())
+	{
+		return TEXT("float");
+	}
+	else if (Property->IsA<FNameProperty>())
+	{
+		return TEXT("FName");
+	}
+	else if (Property->IsA<FStrProperty>())
+	{
+		return TEXT("FString");
+	}
+	else if (Property->IsA<FTextProperty>())
+	{
+		return TEXT("FText");
+	}
+	else if (FObjectProperty* ObjectProp = CastField<FObjectProperty>(Property))
+	{
+		if (ObjectProp->PropertyClass)
+		{
+			return FString::Printf(TEXT("TObjectPtr<%s>"), *ObjectProp->PropertyClass->GetName());
+		}
+		return TEXT("TObjectPtr<UObject>");
+	}
+	else if (FStructProperty* StructProp = CastField<FStructProperty>(Property))
+	{
+		if (StructProp->Struct)
+		{
+			return StructProp->Struct->GetName();
+		}
+		return TEXT("struct");
+	}
+	else if (FArrayProperty* ArrayProp = CastField<FArrayProperty>(Property))
+	{
+		FString InnerType = GetPropertyTypeString(ArrayProp->Inner);
+		return FString::Printf(TEXT("TArray<%s>"), *InnerType);
+	}
+
+	// Fallback
+	return Property->GetClass()->GetName();
+}
+
+// === Shared helpers ===
+
+TSharedPtr<FJsonObject> UQueryLevelTool::TransformToJson(const FTransform& Transform) const
+{
+	TSharedPtr<FJsonObject> TransformJson = MakeShareable(new FJsonObject);
+
+	// Location
+	TSharedPtr<FJsonObject> LocationJson = MakeShareable(new FJsonObject);
+	LocationJson->SetNumberField(TEXT("x"), Transform.GetLocation().X);
+	LocationJson->SetNumberField(TEXT("y"), Transform.GetLocation().Y);
+	LocationJson->SetNumberField(TEXT("z"), Transform.GetLocation().Z);
+	TransformJson->SetObjectField(TEXT("location"), LocationJson);
+
+	// Rotation
+	TSharedPtr<FJsonObject> RotationJson = MakeShareable(new FJsonObject);
+	FRotator Rotator = Transform.Rotator();
+	RotationJson->SetNumberField(TEXT("pitch"), Rotator.Pitch);
+	RotationJson->SetNumberField(TEXT("yaw"), Rotator.Yaw);
+	RotationJson->SetNumberField(TEXT("roll"), Rotator.Roll);
+	TransformJson->SetObjectField(TEXT("rotation"), RotationJson);
+
+	// Scale
+	TSharedPtr<FJsonObject> ScaleJson = MakeShareable(new FJsonObject);
+	ScaleJson->SetNumberField(TEXT("x"), Transform.GetScale3D().X);
+	ScaleJson->SetNumberField(TEXT("y"), Transform.GetScale3D().Y);
+	ScaleJson->SetNumberField(TEXT("z"), Transform.GetScale3D().Z);
+	TransformJson->SetObjectField(TEXT("scale"), ScaleJson);
+
+	return TransformJson;
 }

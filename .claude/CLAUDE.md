@@ -4,7 +4,7 @@
 
 ## Project Overview
 
-This plugin implements the Model Context Protocol (MCP) over HTTP, allowing AI assistants (Claude Code, Cursor, Windsurf, etc.) to inspect and analyze Unreal Engine projects through a standardized JSON-RPC API.
+This plugin implements the Model Context Protocol (MCP) over HTTP, allowing AI assistants (Claude Code, Cursor, Windsurf, etc.) to inspect, analyze, and **modify** Unreal Engine projects through a standardized JSON-RPC API.
 
 ## GitHub Repositories
 
@@ -103,6 +103,7 @@ git branch -D release-temp
 - `Source/YesUeMcp/Public/Tools/McpToolRegistry.h` - Tool registration
 - `Source/YesUeMcpEditor/Public/Server/McpServer.h` - HTTP server
 - `Source/YesUeMcpEditor/Public/Subsystem/McpEditorSubsystem.h` - Lifecycle management
+- `Source/YesUeMcpEditor/Public/Utils/McpAssetModifier.h` - Write operation utilities
 
 ## MCP Server
 
@@ -112,15 +113,17 @@ git branch -D release-temp
 - **Port:** 8080 (configurable)
 - **CORS:** Enabled for cross-origin requests
 
-## Available Tools (22 total)
+## Available Tools (38 total)
 
-### Asset Tools
+### Read Tools (20)
+
+#### Asset Tools
 | Tool | Description |
 |------|-------------|
 | `search-assets` | Search assets by pattern, class, or path with wildcards |
 | `inspect-asset` | General-purpose asset inspection using UE reflection (any asset type) |
 
-### Blueprint Tools
+#### Blueprint Tools
 | Tool | Description |
 |------|-------------|
 | `analyze-blueprint` | Complete blueprint structure analysis |
@@ -133,39 +136,106 @@ git branch -D release-temp
 | `list-blueprint-callables` | List all events, functions, macros with metadata |
 | `get-callable-details` | Get full graph for a specific callable |
 
-### Level Tools
+#### Level Tools
 | Tool | Description |
 |------|-------------|
-| `query-level` | List actors in currently open level with filtering |
-| `get-actor-details` | Inspect specific actor properties and components |
+| `query-level` | List actors with filtering, or get detailed info for a specific actor (use `actor_name` for detail mode) |
 
-### Project Tools
+#### Project Tools
 | Tool | Description |
 |------|-------------|
-| `get-project-settings` | Query input, collision, tags, and map settings |
+| `get-project-info` | Get project/plugin info, optionally include settings (use `section` param for input/collision/tags/maps) |
 | `get-class-hierarchy` | Browse class inheritance (parents/children) |
 | `inspect-data-asset` | Read DataTable and DataAsset contents |
 
-### Reference Tools
+#### Reference Tools
 | Tool | Description |
 |------|-------------|
 | `find-references` | Find references to assets, Blueprint variables, or nodes (type: asset/property/node) |
 
-### Widget Tools
+#### Widget Tools
 | Tool | Description |
 |------|-------------|
 | `inspect-widget-blueprint` | Inspect Widget Blueprint hierarchy, slots (anchors, offsets, sizes), visibility, property bindings, and animations |
 
-### Material Tools
+#### Material Tools
 | Tool | Description |
 |------|-------------|
 | `get-material-graph` | Read complete Material expression graph structure |
 | `get-material-parameters` | Get material parameters (scalar, vector, texture, static switch) |
 
-### Debug Tools
+#### Debug Tools
 | Tool | Description |
 |------|-------------|
 | `get-logs` | Retrieve UE Output Log entries with filtering (category, severity, search) |
+
+### Write Tools (18)
+
+#### Property Tools
+| Tool | Description |
+|------|-------------|
+| `set-property` | Set any property on any asset using UE reflection (supports nested paths, arrays, structs) |
+| `compile-blueprint` | Compile a Blueprint or AnimBlueprint after modifications |
+| `save-asset` | Save a modified asset to disk |
+
+#### Graph Tools
+| Tool | Description |
+|------|-------------|
+| `add-graph-node` | Add a node to Blueprint or Material graph |
+| `remove-graph-node` | Remove a node from any graph |
+| `connect-graph-pins` | Connect two pins in any graph |
+| `disconnect-graph-pin` | Break pin connections |
+
+#### Asset Creation Tools
+| Tool | Description |
+|------|-------------|
+| `create-asset` | Create new asset (Blueprint, Material, DataTable, Level, etc.) |
+| `delete-asset` | Delete an asset from the project |
+
+#### Level Editing Tools
+| Tool | Description |
+|------|-------------|
+| `spawn-actor` | Spawn an actor in the current level (native or Blueprint class) |
+| `delete-actor` | Delete an actor from the level |
+| `add-component` | Add a component to an existing actor |
+| `remove-component` | Remove a component from an actor |
+
+#### Widget Tools
+| Tool | Description |
+|------|-------------|
+| `add-widget` | Add a widget to a WidgetBlueprint tree |
+| `remove-widget` | Remove a widget from a WidgetBlueprint |
+
+#### DataTable Tools
+| Tool | Description |
+|------|-------------|
+| `add-datatable-row` | Add a row to a DataTable |
+| `remove-datatable-row` | Remove a row from a DataTable |
+
+## Write Tool Usage
+
+### Property Modification Pattern
+```json
+// Set a simple property
+{ "asset_path": "/Game/BP_Player", "property_path": "MaxHealth", "value": 100 }
+
+// Nested property
+{ "asset_path": "/Game/BP_Player", "property_path": "Stats.Damage", "value": 25 }
+
+// Array element
+{ "asset_path": "/Game/BP_Player", "property_path": "Items[0].Count", "value": 5 }
+
+// Vector as array
+{ "asset_path": "/Game/BP_Actor", "property_path": "Location", "value": [100, 200, 0] }
+```
+
+### Asset Modification Workflow
+1. Use `set-property` to modify values
+2. Use `compile-blueprint` if modifying a Blueprint
+3. Use `save-asset` to persist changes
+
+### Transaction Support
+All write operations are wrapped in `FScopedTransaction` for undo/redo support.
 
 ## Logging
 
@@ -178,17 +248,15 @@ See GitHub Issues for planned features and enhancements.
 ### Potential Additions
 - Animation asset query (AnimBP, montages, notifies)
 - AI behavior tree analysis
-- Write operations (spawn actors, modify properties)
 - Streaming support for large datasets
 - MCP Resources (expose project files)
 - MCP Prompts (template code generation)
 
 ## Known Limitations
 
-1. **Read-only** - No modification operations supported
-2. **Editor-only** - Cannot run in packaged game
-3. **Single session** - No multi-client support
-4. **No streaming** - Synchronous responses only
+1. **Editor-only** - Cannot run in packaged game
+2. **Single session** - No multi-client support
+3. **No streaming** - Synchronous responses only
 
 ## Project History
 

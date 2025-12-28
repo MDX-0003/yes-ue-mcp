@@ -129,9 +129,9 @@ class TestConnection(McpTestCase):
         """Test that expected minimum number of tools are available."""
         tools = self.client.list_tools()
         tool_names = [t["name"] for t in tools]
-        # Should have at least 35 tools
-        self.assertGreaterEqual(len(tool_names), 35,
-            f"Expected at least 35 tools, got {len(tool_names)}")
+        # Should have at least 36 tools (after consolidation: 22 read -> 20 read, 18 write = 38 - 2 = 36)
+        self.assertGreaterEqual(len(tool_names), 36,
+            f"Expected at least 36 tools, got {len(tool_names)}")
 
     def test_required_read_tools_exist(self):
         """Test that essential read tools are registered."""
@@ -176,6 +176,28 @@ class TestReadTools(McpTestCase):
         self.assertIn("plugin", result)
         self.assertIn("version", result["plugin"])
 
+    def test_get_project_info_with_settings(self):
+        """Test get-project-info with settings section (merged from get-project-settings)."""
+        result = self.client.call_tool("get-project-info", {"section": "input"})
+
+        # Should still have basic project info
+        self.assertIn("project_name", result)
+        self.assertIn("plugin", result)
+        # Should also have settings
+        self.assertIn("settings", result)
+        self.assertIn("input", result["settings"])
+
+    def test_get_project_info_all_settings(self):
+        """Test get-project-info with all settings."""
+        result = self.client.call_tool("get-project-info", {"section": "all"})
+
+        self.assertIn("settings", result)
+        settings = result["settings"]
+        self.assertIn("input", settings)
+        self.assertIn("collision", settings)
+        self.assertIn("tags", settings)
+        self.assertIn("maps", settings)
+
     def test_query_level(self):
         """Test query-level returns actor list."""
         result = self.client.call_tool("query-level", {"limit": 5})
@@ -195,6 +217,29 @@ class TestReadTools(McpTestCase):
         # All returned actors should match filter
         for actor in result["actors"]:
             self.assertIn("PlayerStart", actor["class"])
+
+    def test_query_level_detail_mode(self):
+        """Test query-level with actor_name for detailed info (merged from get-actor-details)."""
+        # First get list of actors to find one to query
+        list_result = self.client.call_tool("query-level", {"limit": 1})
+        if not list_result.get("actors"):
+            self.skipTest("No actors in level to test detail mode")
+
+        actor_name = list_result["actors"][0]["name"]
+
+        # Query with actor_name for detailed info
+        detail_result = self.client.call_tool("query-level", {
+            "actor_name": actor_name,
+            "include_properties": True,
+            "include_components": True
+        })
+
+        # Should have detailed info
+        self.assertIn("name", detail_result)
+        self.assertIn("class", detail_result)
+        self.assertIn("transform", detail_result)
+        # Detail mode includes properties
+        self.assertIn("properties", detail_result)
 
     def test_search_assets(self):
         """Test search-assets returns results."""

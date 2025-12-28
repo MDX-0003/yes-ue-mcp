@@ -30,7 +30,13 @@
       "Bash(findstr:*)",
       "Bash(gh issue edit:*)",
       "Bash(xargs file:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(cmd /c \"\"\"C:\\\\Program Files\\\\Epic Games\\\\UE_5.7\\\\Engine\\\\Build\\\\BatchFiles\\\\Build.bat\"\" ElpisClientEditor Win64 Development -Project=\"\"F:\\\\src3\\\\Covenant\\\\ElpisClient\\\\ElpisClient.uproject\"\" -Plugin=\"\"F:\\\\src3\\\\Covenant\\\\ElpisClient\\\\Plugins\\\\yes-ue-mcp\\\\YesUeMcp.uplugin\"\" -TargetType=Editor\")",
+      "Bash(ls:*)",
+      "Bash(cmd /c \"robocopy F:\\\\src3\\\\yes-ue-mcp F:\\\\src_ue5\\\\GameAnimationSample56\\\\Plugins\\\\yes-ue-mcp /MIR /XD .git .claude /XF .gitignore .gitattributes\")",
+      "Bash(cmd /c \"dir F:\\\\src_ue5\\\\GameAnimationSample56\\\\Plugins\\\\yes-ue-mcp\\\\*.uplugin\")",
+      "Bash(\"D:/Program Files/Epic Games/UE_5.6/Engine/Build/BatchFiles/Build.bat\" GameAnimationSampleEditor Win64 Development -Project=\"F:/src_ue5/GameAnimationSample56/GameAnimationSample.uproject\" -Plugin=\"F:/src_ue5/GameAnimationSample56/Plugins/yes-ue-mcp/YesUeMcp.uplugin\" -TargetType=Editor)",
+      "Bash(python:*)"
     ]
   },
   "enabledMcpjsonServers": [
