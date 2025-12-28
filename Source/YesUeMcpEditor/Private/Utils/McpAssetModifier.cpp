@@ -1,0 +1,496 @@
+// Copyright softdaddy-o 2024. All Rights Reserved.
+
+#include "Utils/McpAssetModifier.h"
+#include "Engine/Blueprint.h"
+#include "Kismet2/KismetEditorUtilities.h"
+#include "Kismet2/BlueprintEditorUtils.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "UObject/SavePackage.h"
+#include "Misc/ScopedSlowTask.h"
+#include "ScopedTransaction.h"
+#include "JsonObjectConverter.h"
+
+TSharedPtr<FScopedTransaction> FMcpAssetModifier::BeginTransaction(const FText& Description)
+{
+	return MakeShared<FScopedTransaction>(Description);
+}
+
+UObject* FMcpAssetModifier::LoadAssetByPath(const FString& AssetPath, FString& OutError)
+{
+	if (!ValidateAssetPath(AssetPath, OutError))
+	{
+		return nullptr;
+	}
+
+	// Try to load the asset
+	UObject* Object = StaticLoadObject(UObject::StaticClass(), nullptr, *AssetPath);
+	if (!Object)
+	{
+		OutError = FString::Printf(TEXT("Failed to load asset: %s"), *AssetPath);
+		return nullptr;
+	}
+
+	return Object;
+}
+
+bool FMcpAssetModifier::MarkModified(UObject* Object)
+{
+	if (!Object)
+	{
+		return false;
+	}
+
+	Object->Modify();
+	return true;
+}
+
+bool FMcpAssetModifier::MarkPackageDirty(UObject* Object)
+{
+	if (!Object)
+	{
+		return false;
+	}
+
+	UPackage* Package = Object->GetOutermost();
+	if (Package)
+	{
+		Package->MarkPackageDirty();
+		return true;
+	}
+
+	return false;
+}
+
+bool FMcpAssetModifier::SaveAsset(UObject* Object, bool bPromptUser, FString& OutError)
+{
+	if (!Object)
+	{
+		OutError = TEXT("Cannot save null object");
+		return false;
+	}
+
+	UPackage* Package = Object->GetOutermost();
+	if (!Package)
+	{
+		OutError = TEXT("Object has no package");
+		return false;
+	}
+
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(
+		Package->GetName(),
+		FPackageName::GetAssetPackageExtension());
+
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	SaveArgs.Error = GError;
+	SaveArgs.bWarnOfLongFilename = true;
+
+	FSavePackageResultStruct Result = UPackage::Save(Package, Object, *PackageFileName, SaveArgs);
+
+	if (Result.Result == ESavePackageResult::Success)
+	{
+		return true;
+	}
+
+	OutError = FString::Printf(TEXT("Failed to save asset: %s"), *PackageFileName);
+	return false;
+}
+
+bool FMcpAssetModifier::CompileBlueprint(UBlueprint* Blueprint, FString& OutError)
+{
+	if (!Blueprint)
+	{
+		OutError = TEXT("Cannot compile null Blueprint");
+		return false;
+	}
+
+	// Compile the Blueprint
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, nullptr);
+
+	// Check for compile errors
+	if (Blueprint->Status == BS_Error)
+	{
+		OutError = TEXT("Blueprint compilation failed with errors");
+		return false;
+	}
+
+	return true;
+}
+
+void FMcpAssetModifier::RefreshBlueprintNodes(UBlueprint* Blueprint)
+{
+	if (!Blueprint)
+	{
+		return;
+	}
+
+	FBlueprintEditorUtils::RefreshAllNodes(Blueprint);
+}
+
+bool FMcpAssetModifier::ValidateAssetPath(const FString& AssetPath, FString& OutError)
+{
+	if (AssetPath.IsEmpty())
+	{
+		OutError = TEXT("Asset path is empty");
+		return false;
+	}
+
+	// Must start with /
+	if (!AssetPath.StartsWith(TEXT("/")))
+	{
+		OutError = TEXT("Asset path must start with '/'");
+		return false;
+	}
+
+	// Basic character validation
+	for (TCHAR Char : AssetPath)
+	{
+		if (!FChar::IsAlnum(Char) && Char != '/' && Char != '_' && Char != '-' && Char != '.')
+		{
+			OutError = FString::Printf(TEXT("Invalid character in asset path: '%c'"), Char);
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool FMcpAssetModifier::AssetExists(const FString& AssetPath)
+{
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+	FAssetData AssetData = AssetRegistryModule.Get().GetAssetByObjectPath(FSoftObjectPath(AssetPath));
+	return AssetData.IsValid();
+}
+
+bool FMcpAssetModifier::ParseArrayIndex(const FString& Segment, FString& OutName, int32& OutIndex)
+{
+	OutIndex = -1;
+
+	int32 BracketStart = INDEX_NONE;
+	if (!Segment.FindChar('[', BracketStart))
+	{
+		OutName = Segment;
+		return true;
+	}
+
+	int32 BracketEnd = INDEX_NONE;
+	if (!Segment.FindChar(']', BracketEnd) || BracketEnd <= BracketStart + 1)
+	{
+		return false;
+	}
+
+	OutName = Segment.Left(BracketStart);
+	FString IndexStr = Segment.Mid(BracketStart + 1, BracketEnd - BracketStart - 1);
+
+	if (!FCString::IsNumeric(*IndexStr))
+	{
+		return false;
+	}
+
+	OutIndex = FCString::Atoi(*IndexStr);
+	return OutIndex >= 0;
+}
+
+bool FMcpAssetModifier::FindPropertyByPath(
+	UObject* Object,
+	const FString& PropertyPath,
+	FProperty*& OutProperty,
+	void*& OutContainer,
+	FString& OutError)
+{
+	if (!Object)
+	{
+		OutError = TEXT("Object is null");
+		return false;
+	}
+
+	if (PropertyPath.IsEmpty())
+	{
+		OutError = TEXT("Property path is empty");
+		return false;
+	}
+
+	// Split path into segments
+	TArray<FString> Segments;
+	PropertyPath.ParseIntoArray(Segments, TEXT("."));
+
+	if (Segments.Num() == 0)
+	{
+		OutError = TEXT("Invalid property path");
+		return false;
+	}
+
+	UStruct* CurrentStruct = Object->GetClass();
+	void* CurrentContainer = Object;
+	FProperty* CurrentProperty = nullptr;
+
+	for (int32 i = 0; i < Segments.Num(); ++i)
+	{
+		const FString& Segment = Segments[i];
+
+		// Parse array index if present
+		FString PropertyName;
+		int32 ArrayIndex;
+		if (!ParseArrayIndex(Segment, PropertyName, ArrayIndex))
+		{
+			OutError = FString::Printf(TEXT("Invalid array index in segment: %s"), *Segment);
+			return false;
+		}
+
+		// Find the property
+		CurrentProperty = CurrentStruct->FindPropertyByName(*PropertyName);
+		if (!CurrentProperty)
+		{
+			OutError = FString::Printf(TEXT("Property not found: %s"), *PropertyName);
+			return false;
+		}
+
+		// Handle array access
+		if (ArrayIndex >= 0)
+		{
+			FArrayProperty* ArrayProp = CastField<FArrayProperty>(CurrentProperty);
+			if (!ArrayProp)
+			{
+				OutError = FString::Printf(TEXT("Property '%s' is not an array"), *PropertyName);
+				return false;
+			}
+
+			FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(CurrentContainer));
+			if (ArrayIndex >= ArrayHelper.Num())
+			{
+				OutError = FString::Printf(TEXT("Array index %d out of bounds (size: %d)"), ArrayIndex, ArrayHelper.Num());
+				return false;
+			}
+
+			CurrentContainer = ArrayHelper.GetRawPtr(ArrayIndex);
+			CurrentProperty = ArrayProp->Inner;
+
+			// If this is the last segment, we're done
+			if (i == Segments.Num() - 1)
+			{
+				break;
+			}
+
+			// Otherwise, continue with inner struct
+			FStructProperty* InnerStructProp = CastField<FStructProperty>(ArrayProp->Inner);
+			if (InnerStructProp)
+			{
+				CurrentStruct = InnerStructProp->Struct;
+			}
+			else
+			{
+				OutError = FString::Printf(TEXT("Cannot traverse into non-struct array element at: %s"), *Segment);
+				return false;
+			}
+		}
+		else
+		{
+			// Not an array access - check if this is the last segment
+			if (i == Segments.Num() - 1)
+			{
+				// This is the target property
+				break;
+			}
+
+			// Need to traverse into a struct
+			FStructProperty* StructProp = CastField<FStructProperty>(CurrentProperty);
+			FObjectProperty* ObjectProp = CastField<FObjectProperty>(CurrentProperty);
+
+			if (StructProp)
+			{
+				CurrentContainer = CurrentProperty->ContainerPtrToValuePtr<void>(CurrentContainer);
+				CurrentStruct = StructProp->Struct;
+			}
+			else if (ObjectProp)
+			{
+				UObject* ObjectValue = ObjectProp->GetObjectPropertyValue_InContainer(CurrentContainer);
+				if (!ObjectValue)
+				{
+					OutError = FString::Printf(TEXT("Object property '%s' is null"), *PropertyName);
+					return false;
+				}
+				CurrentContainer = ObjectValue;
+				CurrentStruct = ObjectValue->GetClass();
+			}
+			else
+			{
+				OutError = FString::Printf(TEXT("Cannot traverse property '%s' - not a struct or object"), *PropertyName);
+				return false;
+			}
+		}
+	}
+
+	OutProperty = CurrentProperty;
+	OutContainer = CurrentContainer;
+	return true;
+}
+
+bool FMcpAssetModifier::SetPropertyFromJson(
+	FProperty* Property,
+	void* Container,
+	const TSharedPtr<FJsonValue>& Value,
+	FString& OutError)
+{
+	if (!Property || !Container || !Value.IsValid())
+	{
+		OutError = TEXT("Invalid property, container, or value");
+		return false;
+	}
+
+	void* ValuePtr = Property->ContainerPtrToValuePtr<void>(Container);
+
+	// Handle different property types
+	if (FNumericProperty* NumericProp = CastField<FNumericProperty>(Property))
+	{
+		if (NumericProp->IsFloatingPoint())
+		{
+			double NumValue = 0.0;
+			if (!Value->TryGetNumber(NumValue))
+			{
+				OutError = TEXT("Expected numeric value");
+				return false;
+			}
+			NumericProp->SetFloatingPointPropertyValue(ValuePtr, NumValue);
+		}
+		else
+		{
+			int64 NumValue = 0;
+			if (!Value->TryGetNumber(NumValue))
+			{
+				OutError = TEXT("Expected integer value");
+				return false;
+			}
+			NumericProp->SetIntPropertyValue(ValuePtr, NumValue);
+		}
+		return true;
+	}
+
+	if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
+	{
+		bool BoolValue = false;
+		if (!Value->TryGetBool(BoolValue))
+		{
+			OutError = TEXT("Expected boolean value");
+			return false;
+		}
+		BoolProp->SetPropertyValue(ValuePtr, BoolValue);
+		return true;
+	}
+
+	if (FStrProperty* StrProp = CastField<FStrProperty>(Property))
+	{
+		FString StrValue;
+		if (!Value->TryGetString(StrValue))
+		{
+			OutError = TEXT("Expected string value");
+			return false;
+		}
+		StrProp->SetPropertyValue(ValuePtr, StrValue);
+		return true;
+	}
+
+	if (FNameProperty* NameProp = CastField<FNameProperty>(Property))
+	{
+		FString StrValue;
+		if (!Value->TryGetString(StrValue))
+		{
+			OutError = TEXT("Expected string value for FName");
+			return false;
+		}
+		NameProp->SetPropertyValue(ValuePtr, FName(*StrValue));
+		return true;
+	}
+
+	if (FTextProperty* TextProp = CastField<FTextProperty>(Property))
+	{
+		FString StrValue;
+		if (!Value->TryGetString(StrValue))
+		{
+			OutError = TEXT("Expected string value for FText");
+			return false;
+		}
+		TextProp->SetPropertyValue(ValuePtr, FText::FromString(StrValue));
+		return true;
+	}
+
+	if (FStructProperty* StructProp = CastField<FStructProperty>(Property))
+	{
+		const TSharedPtr<FJsonObject>* JsonObject = nullptr;
+		if (!Value->TryGetObject(JsonObject) || !JsonObject->IsValid())
+		{
+			// Try array for vector types
+			const TArray<TSharedPtr<FJsonValue>>* JsonArray = nullptr;
+			if (Value->TryGetArray(JsonArray))
+			{
+				// Handle FVector, FRotator, FLinearColor as arrays
+				if (StructProp->Struct == TBaseStructure<FVector>::Get() && JsonArray->Num() >= 3)
+				{
+					FVector* Vec = static_cast<FVector*>(ValuePtr);
+					Vec->X = (*JsonArray)[0]->AsNumber();
+					Vec->Y = (*JsonArray)[1]->AsNumber();
+					Vec->Z = (*JsonArray)[2]->AsNumber();
+					return true;
+				}
+				if (StructProp->Struct == TBaseStructure<FRotator>::Get() && JsonArray->Num() >= 3)
+				{
+					FRotator* Rot = static_cast<FRotator*>(ValuePtr);
+					Rot->Pitch = (*JsonArray)[0]->AsNumber();
+					Rot->Yaw = (*JsonArray)[1]->AsNumber();
+					Rot->Roll = (*JsonArray)[2]->AsNumber();
+					return true;
+				}
+				if (StructProp->Struct == TBaseStructure<FLinearColor>::Get() && JsonArray->Num() >= 3)
+				{
+					FLinearColor* Color = static_cast<FLinearColor*>(ValuePtr);
+					Color->R = (*JsonArray)[0]->AsNumber();
+					Color->G = (*JsonArray)[1]->AsNumber();
+					Color->B = (*JsonArray)[2]->AsNumber();
+					Color->A = JsonArray->Num() >= 4 ? (*JsonArray)[3]->AsNumber() : 1.0f;
+					return true;
+				}
+			}
+
+			OutError = TEXT("Expected object or array value for struct");
+			return false;
+		}
+
+		// Use JSON object converter for complex structs
+		if (!FJsonObjectConverter::JsonObjectToUStruct(JsonObject->ToSharedRef(), StructProp->Struct, ValuePtr))
+		{
+			OutError = TEXT("Failed to convert JSON to struct");
+			return false;
+		}
+		return true;
+	}
+
+	if (FEnumProperty* EnumProp = CastField<FEnumProperty>(Property))
+	{
+		FString StrValue;
+		int64 IntValue;
+
+		if (Value->TryGetString(StrValue))
+		{
+			// Try to find enum value by name
+			int64 EnumValue = EnumProp->GetEnum()->GetValueByNameString(StrValue);
+			if (EnumValue == INDEX_NONE)
+			{
+				OutError = FString::Printf(TEXT("Invalid enum value: %s"), *StrValue);
+				return false;
+			}
+			EnumProp->GetUnderlyingProperty()->SetIntPropertyValue(ValuePtr, EnumValue);
+		}
+		else if (Value->TryGetNumber(IntValue))
+		{
+			EnumProp->GetUnderlyingProperty()->SetIntPropertyValue(ValuePtr, IntValue);
+		}
+		else
+		{
+			OutError = TEXT("Expected string or integer for enum");
+			return false;
+		}
+		return true;
+	}
+
+	OutError = FString::Printf(TEXT("Unsupported property type: %s"), *Property->GetClass()->GetName());
+	return false;
+}

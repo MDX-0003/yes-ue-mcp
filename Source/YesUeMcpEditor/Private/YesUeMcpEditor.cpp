@@ -28,6 +28,25 @@
 #include "Tools/Material/MaterialParametersTool.h"
 #include "Tools/Debug/GetLogsTool.h"
 
+// Write tools
+#include "Tools/Write/SetPropertyTool.h"
+#include "Tools/Write/CompileBlueprintTool.h"
+#include "Tools/Write/SaveAssetTool.h"
+#include "Tools/Write/AddGraphNodeTool.h"
+#include "Tools/Write/RemoveGraphNodeTool.h"
+#include "Tools/Write/ConnectGraphPinsTool.h"
+#include "Tools/Write/DisconnectGraphPinTool.h"
+#include "Tools/Write/CreateAssetTool.h"
+#include "Tools/Write/DeleteAssetTool.h"
+#include "Tools/Write/SpawnActorTool.h"
+#include "Tools/Write/DeleteActorTool.h"
+#include "Tools/Write/AddComponentTool.h"
+#include "Tools/Write/RemoveComponentTool.h"
+#include "Tools/Write/AddWidgetTool.h"
+#include "Tools/Write/RemoveWidgetTool.h"
+#include "Tools/Write/AddDataTableRowTool.h"
+#include "Tools/Write/RemoveDataTableRowTool.h"
+
 DEFINE_LOG_CATEGORY(LogYesUeMcpEditor);
 DEFINE_LOG_CATEGORY(LogYesUeMcp);
 
@@ -96,6 +115,35 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 
 	// Debug tools
 	Registry.RegisterToolClass(UGetLogsTool::StaticClass());
+
+	// Write tools - Property
+	Registry.RegisterToolClass(USetPropertyTool::StaticClass());
+	Registry.RegisterToolClass(UCompileBlueprintTool::StaticClass());
+	Registry.RegisterToolClass(USaveAssetTool::StaticClass());
+
+	// Write tools - Graph
+	Registry.RegisterToolClass(UAddGraphNodeTool::StaticClass());
+	Registry.RegisterToolClass(URemoveGraphNodeTool::StaticClass());
+	Registry.RegisterToolClass(UConnectGraphPinsTool::StaticClass());
+	Registry.RegisterToolClass(UDisconnectGraphPinTool::StaticClass());
+
+	// Write tools - Asset creation
+	Registry.RegisterToolClass(UCreateAssetTool::StaticClass());
+	Registry.RegisterToolClass(UDeleteAssetTool::StaticClass());
+
+	// Write tools - Level editing
+	Registry.RegisterToolClass(USpawnActorTool::StaticClass());
+	Registry.RegisterToolClass(UDeleteActorTool::StaticClass());
+	Registry.RegisterToolClass(UAddComponentTool::StaticClass());
+	Registry.RegisterToolClass(URemoveComponentTool::StaticClass());
+
+	// Write tools - Widget
+	Registry.RegisterToolClass(UAddWidgetTool::StaticClass());
+	Registry.RegisterToolClass(URemoveWidgetTool::StaticClass());
+
+	// Write tools - DataTable
+	Registry.RegisterToolClass(UAddDataTableRowTool::StaticClass());
+	Registry.RegisterToolClass(URemoveDataTableRowTool::StaticClass());
 
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("Registered %d MCP tools"), Registry.GetToolCount());
 }
