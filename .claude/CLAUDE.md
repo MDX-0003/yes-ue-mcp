@@ -113,28 +113,25 @@ git branch -D release-temp
 - **Port:** 8080 (configurable)
 - **CORS:** Enabled for cross-origin requests
 
-## Available Tools (38 total)
+## Available Tools (28 total)
 
-### Read Tools (20)
-
-#### Asset Tools
-| Tool | Description |
-|------|-------------|
-| `search-assets` | Search assets by pattern, class, or path with wildcards |
-| `inspect-asset` | General-purpose asset inspection using UE reflection (any asset type) |
+### Read Tools (10) - Consolidated in v1.6.0
 
 #### Blueprint Tools
 | Tool | Description |
 |------|-------------|
-| `analyze-blueprint` | Complete blueprint structure analysis |
-| `get-blueprint-functions` | Function signatures and metadata |
-| `get-blueprint-variables` | Variable types and properties |
-| `get-blueprint-components` | Component hierarchy with transforms |
-| `get-blueprint-graph` | Read complete graph structure (nodes, pins, connections) |
-| `get-blueprint-node` | Get detailed info about a specific node by GUID |
-| `get-blueprint-defaults` | Read CDO property values (supports `include_inherited`) |
-| `list-blueprint-callables` | List all events, functions, macros with metadata |
-| `get-callable-details` | Get full graph for a specific callable |
+| `query-blueprint` | Query Blueprint structure: functions, variables, components, defaults. Use `include` param to select what to return. (Merged: analyze-blueprint, get-blueprint-functions, get-blueprint-variables, get-blueprint-components, get-blueprint-defaults) |
+| `query-blueprint-graph` | Query Blueprint graphs: event graphs, functions, macros, nodes. Use `node_guid` for specific node, `callable_name` for callable details, `list_callables` for lightweight list. (Merged: get-blueprint-graph, get-blueprint-node, list-blueprint-callables, get-callable-details) |
+
+#### Asset Tools
+| Tool | Description |
+|------|-------------|
+| `query-asset` | Search or inspect assets. Use `query` param for search mode, `asset_path` for inspect mode. Handles DataTables and DataAssets. (Merged: search-assets, inspect-asset, inspect-data-asset) |
+
+#### Material Tools
+| Tool | Description |
+|------|-------------|
+| `query-material` | Query Material expression graph and parameters. Use `include` param: 'graph', 'parameters', or 'all'. (Merged: get-material-graph, get-material-parameters) |
 
 #### Level Tools
 | Tool | Description |
@@ -146,7 +143,6 @@ git branch -D release-temp
 |------|-------------|
 | `get-project-info` | Get project/plugin info, optionally include settings (use `section` param for input/collision/tags/maps) |
 | `get-class-hierarchy` | Browse class inheritance (parents/children) |
-| `inspect-data-asset` | Read DataTable and DataAsset contents |
 
 #### Reference Tools
 | Tool | Description |
@@ -157,12 +153,6 @@ git branch -D release-temp
 | Tool | Description |
 |------|-------------|
 | `inspect-widget-blueprint` | Inspect Widget Blueprint hierarchy, slots (anchors, offsets, sizes), visibility, property bindings, and animations |
-
-#### Material Tools
-| Tool | Description |
-|------|-------------|
-| `get-material-graph` | Read complete Material expression graph structure |
-| `get-material-parameters` | Get material parameters (scalar, vector, texture, static switch) |
 
 #### Debug Tools
 | Tool | Description |

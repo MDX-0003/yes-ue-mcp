@@ -4,26 +4,16 @@
 #include "Tools/McpToolRegistry.h"
 #include "UI/McpToolbarExtension.h"
 
-// Include tool headers for registration
-#include "Tools/Blueprint/BlueprintAnalysisTool.h"
-#include "Tools/Blueprint/BlueprintFunctionsTool.h"
-#include "Tools/Blueprint/BlueprintVariablesTool.h"
-#include "Tools/Blueprint/BlueprintComponentsTool.h"
-#include "Tools/Blueprint/BlueprintGraphTool.h"
-#include "Tools/Blueprint/BlueprintNodeTool.h"
-#include "Tools/Blueprint/BlueprintDefaultsTool.h"
-#include "Tools/Blueprint/BlueprintCallableListTool.h"
-#include "Tools/Blueprint/CallableDetailsTool.h"
+// Consolidated Read Tools
+#include "Tools/Blueprint/QueryBlueprintTool.h"
+#include "Tools/Blueprint/QueryBlueprintGraphTool.h"
 #include "Tools/Level/QueryLevelTool.h"
 #include "Tools/Project/ProjectInfoTool.h"
+#include "Tools/Asset/QueryAssetTool.h"
+#include "Tools/Material/QueryMaterialTool.h"
 #include "Tools/Analysis/ClassHierarchyTool.h"
-#include "Tools/Data/DataAssetTool.h"
-#include "Tools/Asset/AssetSearchTool.h"
-#include "Tools/Asset/InspectAssetTool.h"
 #include "Tools/References/FindReferencesTool.h"
 #include "Tools/Widget/WidgetBlueprintTool.h"
-#include "Tools/Material/MaterialGraphTool.h"
-#include "Tools/Material/MaterialParametersTool.h"
 #include "Tools/Debug/GetLogsTool.h"
 
 // Write tools
@@ -72,42 +62,32 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 {
 	FMcpToolRegistry& Registry = FMcpToolRegistry::Get();
 
-	// Blueprint tools
-	Registry.RegisterToolClass(UBlueprintAnalysisTool::StaticClass());
-	Registry.RegisterToolClass(UBlueprintFunctionsTool::StaticClass());
-	Registry.RegisterToolClass(UBlueprintVariablesTool::StaticClass());
-	Registry.RegisterToolClass(UBlueprintComponentsTool::StaticClass());
-	Registry.RegisterToolClass(UBlueprintGraphTool::StaticClass());
-	Registry.RegisterToolClass(UBlueprintNodeTool::StaticClass());
-	Registry.RegisterToolClass(UBlueprintDefaultsTool::StaticClass());
-	Registry.RegisterToolClass(UBlueprintCallableListTool::StaticClass());
-	Registry.RegisterToolClass(UCallableDetailsTool::StaticClass());
+	// === Consolidated Read Tools (10 tools) ===
 
-	// Level/World tools
+	// Blueprint tools (was 9, now 2)
+	Registry.RegisterToolClass(UQueryBlueprintTool::StaticClass());
+	Registry.RegisterToolClass(UQueryBlueprintGraphTool::StaticClass());
+
+	// Level tools (was 2, now 1)
 	Registry.RegisterToolClass(UQueryLevelTool::StaticClass());
 
-	// Project configuration tools
+	// Project tools (was 2, now 1)
 	Registry.RegisterToolClass(UProjectInfoTool::StaticClass());
+
+	// Asset tools (was 3, now 1)
+	Registry.RegisterToolClass(UQueryAssetTool::StaticClass());
+
+	// Material tools (was 2, now 1)
+	Registry.RegisterToolClass(UQueryMaterialTool::StaticClass());
 
 	// Analysis tools
 	Registry.RegisterToolClass(UClassHierarchyTool::StaticClass());
-
-	// Data tools
-	Registry.RegisterToolClass(UDataAssetTool::StaticClass());
-
-	// Asset tools
-	Registry.RegisterToolClass(UAssetSearchTool::StaticClass());
-	Registry.RegisterToolClass(UInspectAssetTool::StaticClass());
 
 	// Reference tools
 	Registry.RegisterToolClass(UFindReferencesTool::StaticClass());
 
 	// Widget tools
 	Registry.RegisterToolClass(UWidgetBlueprintTool::StaticClass());
-
-	// Material tools
-	Registry.RegisterToolClass(UMaterialGraphTool::StaticClass());
-	Registry.RegisterToolClass(UMaterialParametersTool::StaticClass());
 
 	// Debug tools
 	Registry.RegisterToolClass(UGetLogsTool::StaticClass());

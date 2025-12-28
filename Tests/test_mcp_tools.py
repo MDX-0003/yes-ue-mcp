@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
 """
-MCP Tools Integration Tests
+MCP Tools Integration Tests (v1.6.0 - Post Consolidation)
 
 This script tests the yes-ue-mcp plugin tools using Python's unittest framework.
+Updated for the consolidated tool architecture (10 read tools + 18 write tools).
+
+Consolidated Read Tools:
+    - query-blueprint: Merged from analyze-blueprint, get-blueprint-functions,
+                       get-blueprint-variables, get-blueprint-components, get-blueprint-defaults
+    - query-blueprint-graph: Merged from get-blueprint-graph, get-blueprint-node,
+                             list-blueprint-callables, get-callable-details
+    - query-asset: Merged from search-assets, inspect-asset, inspect-data-asset
+    - query-material: Merged from get-material-graph, get-material-parameters
+    - query-level: Merged with get-actor-details (use actor_name for detail mode)
+    - get-project-info: Merged with get-project-settings (use section param)
+    - get-class-hierarchy, find-references, inspect-widget-blueprint, get-logs
 
 Usage:
     python -m pytest test_mcp_tools.py -v
@@ -129,24 +141,57 @@ class TestConnection(McpTestCase):
         """Test that expected minimum number of tools are available."""
         tools = self.client.list_tools()
         tool_names = [t["name"] for t in tools]
-        # Should have at least 36 tools (after consolidation: 22 read -> 20 read, 18 write = 38 - 2 = 36)
-        self.assertGreaterEqual(len(tool_names), 36,
-            f"Expected at least 36 tools, got {len(tool_names)}")
+        # After aggressive consolidation: 10 read + 18 write = 28 tools
+        self.assertGreaterEqual(len(tool_names), 28,
+            f"Expected at least 28 tools, got {len(tool_names)}")
 
     def test_required_read_tools_exist(self):
-        """Test that essential read tools are registered."""
+        """Test that essential read tools are registered (after consolidation)."""
         tools = self.client.list_tools()
         tool_names = {t["name"] for t in tools}
 
+        # New consolidated tools (10 read tools total)
         required_tools = [
-            "get-project-info",
-            "query-level",
-            "search-assets",
-            "analyze-blueprint",
-            "get-blueprint-graph",
+            "query-blueprint",        # Merged: analyze-blueprint, get-blueprint-functions, etc.
+            "query-blueprint-graph",  # Merged: get-blueprint-graph, get-blueprint-node, etc.
+            "query-level",            # Merged with get-actor-details
+            "get-project-info",       # Merged with get-project-settings
+            "query-asset",            # Merged: search-assets, inspect-asset, inspect-data-asset
+            "query-material",         # Merged: get-material-graph, get-material-parameters
+            "get-class-hierarchy",
+            "find-references",
+            "inspect-widget-blueprint",
+            "get-logs",
         ]
         for tool in required_tools:
             self.assertIn(tool, tool_names, f"Required tool '{tool}' not found")
+
+    def test_old_tools_removed(self):
+        """Test that old pre-consolidation tools are no longer registered."""
+        tools = self.client.list_tools()
+        tool_names = {t["name"] for t in tools}
+
+        # These tools should NOT exist after consolidation
+        removed_tools = [
+            "analyze-blueprint",      # Now query-blueprint
+            "get-blueprint-functions",
+            "get-blueprint-variables",
+            "get-blueprint-components",
+            "get-blueprint-defaults",
+            "get-blueprint-graph",    # Now query-blueprint-graph
+            "get-blueprint-node",
+            "list-blueprint-callables",
+            "get-callable-details",
+            "search-assets",          # Now query-asset
+            "inspect-asset",
+            "inspect-data-asset",
+            "get-material-graph",     # Now query-material
+            "get-material-parameters",
+            "get-actor-details",      # Now query-level with actor_name
+            "get-project-settings",   # Now get-project-info with section
+        ]
+        for tool in removed_tools:
+            self.assertNotIn(tool, tool_names, f"Old tool '{tool}' should have been removed")
 
     def test_required_write_tools_exist(self):
         """Test that essential write tools are registered."""
@@ -241,9 +286,20 @@ class TestReadTools(McpTestCase):
         # Detail mode includes properties
         self.assertIn("properties", detail_result)
 
-    def test_search_assets(self):
-        """Test search-assets returns results."""
-        result = self.client.call_tool("search-assets", {
+    def test_get_logs(self):
+        """Test get-logs returns log entries."""
+        result = self.client.call_tool("get-logs", {"limit": 10})
+
+        self.assertIn("entries", result)
+        self.assertIsInstance(result["entries"], list)
+
+
+class TestQueryAsset(McpTestCase):
+    """Test query-asset tool (consolidated from search-assets, inspect-asset, inspect-data-asset)."""
+
+    def test_search_mode(self):
+        """Test query-asset in search mode (was search-assets)."""
+        result = self.client.call_tool("query-asset", {
             "query": "*",
             "limit": 5
         })
@@ -251,12 +307,290 @@ class TestReadTools(McpTestCase):
         self.assertIn("assets", result)
         self.assertIn("count", result)
 
-    def test_get_logs(self):
-        """Test get-logs returns log entries."""
-        result = self.client.call_tool("get-logs", {"limit": 10})
+    def test_search_with_class_filter(self):
+        """Test query-asset search with class filter."""
+        result = self.client.call_tool("query-asset", {
+            "query": "*",
+            "class": "Blueprint",
+            "limit": 10
+        })
 
-        self.assertIn("entries", result)
-        self.assertIsInstance(result["entries"], list)
+        self.assertIn("assets", result)
+        # All returned assets should be Blueprints
+        for asset in result.get("assets", []):
+            self.assertEqual(asset.get("class"), "Blueprint")
+
+    def test_search_with_path_filter(self):
+        """Test query-asset search with path filter."""
+        result = self.client.call_tool("query-asset", {
+            "query": "*",
+            "path": "/Game",
+            "limit": 5
+        })
+
+        self.assertIn("assets", result)
+        # All returned assets should be under /Game
+        for asset in result.get("assets", []):
+            self.assertTrue(asset.get("path", "").startswith("/Game"))
+
+    def test_inspect_mode(self):
+        """Test query-asset in inspect mode (was inspect-asset)."""
+        # First search for an asset to inspect
+        search_result = self.client.call_tool("query-asset", {
+            "query": "*",
+            "limit": 1
+        })
+        if not search_result.get("assets"):
+            self.skipTest("No assets to inspect")
+
+        asset_path = search_result["assets"][0]["path"]
+
+        # Inspect the asset
+        inspect_result = self.client.call_tool("query-asset", {
+            "asset_path": asset_path,
+            "depth": 1
+        })
+
+        self.assertIn("asset_path", inspect_result)
+        self.assertIn("class", inspect_result)
+
+
+class TestQueryBlueprint(McpTestCase):
+    """Test query-blueprint tool (consolidated from analyze-blueprint, get-blueprint-functions, etc.)."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Find a Blueprint to test with."""
+        super().setUpClass()
+
+        # Search for any Blueprint
+        result = cls.client.call_tool("query-asset", {
+            "query": "*",
+            "class": "Blueprint",
+            "limit": 1
+        })
+        if result.get("assets"):
+            cls.test_bp_path = result["assets"][0]["path"]
+        else:
+            cls.test_bp_path = None
+
+    def test_default_mode(self):
+        """Test query-blueprint returns all info by default."""
+        if not self.test_bp_path:
+            self.skipTest("No Blueprint found for testing")
+
+        result = self.client.call_tool("query-blueprint", {
+            "asset_path": self.test_bp_path
+        })
+
+        self.assertIn("asset_path", result)
+        self.assertIn("parent_class", result)
+        # Default includes functions, variables, components
+        self.assertIn("functions", result)
+        self.assertIn("variables", result)
+        self.assertIn("components", result)
+
+    def test_include_functions_only(self):
+        """Test query-blueprint with include=functions."""
+        if not self.test_bp_path:
+            self.skipTest("No Blueprint found for testing")
+
+        result = self.client.call_tool("query-blueprint", {
+            "asset_path": self.test_bp_path,
+            "include": "functions"
+        })
+
+        self.assertIn("functions", result)
+
+    def test_include_variables_only(self):
+        """Test query-blueprint with include=variables."""
+        if not self.test_bp_path:
+            self.skipTest("No Blueprint found for testing")
+
+        result = self.client.call_tool("query-blueprint", {
+            "asset_path": self.test_bp_path,
+            "include": "variables"
+        })
+
+        self.assertIn("variables", result)
+
+    def test_include_components_only(self):
+        """Test query-blueprint with include=components."""
+        if not self.test_bp_path:
+            self.skipTest("No Blueprint found for testing")
+
+        result = self.client.call_tool("query-blueprint", {
+            "asset_path": self.test_bp_path,
+            "include": "components"
+        })
+
+        self.assertIn("components", result)
+
+    def test_include_defaults(self):
+        """Test query-blueprint with include=defaults (was get-blueprint-defaults)."""
+        if not self.test_bp_path:
+            self.skipTest("No Blueprint found for testing")
+
+        result = self.client.call_tool("query-blueprint", {
+            "asset_path": self.test_bp_path,
+            "include": "defaults"
+        })
+
+        self.assertIn("defaults", result)
+
+
+class TestQueryBlueprintGraph(McpTestCase):
+    """Test query-blueprint-graph tool (consolidated from get-blueprint-graph, get-blueprint-node, etc.)."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Find a Blueprint to test with."""
+        super().setUpClass()
+
+        # Search for any Blueprint
+        result = cls.client.call_tool("query-asset", {
+            "query": "*",
+            "class": "Blueprint",
+            "limit": 1
+        })
+        if result.get("assets"):
+            cls.test_bp_path = result["assets"][0]["path"]
+        else:
+            cls.test_bp_path = None
+
+    def test_default_mode_returns_all_graphs(self):
+        """Test query-blueprint-graph returns all graphs by default."""
+        if not self.test_bp_path:
+            self.skipTest("No Blueprint found for testing")
+
+        result = self.client.call_tool("query-blueprint-graph", {
+            "asset_path": self.test_bp_path
+        })
+
+        self.assertIn("asset_path", result)
+        self.assertIn("graphs", result)
+        self.assertIsInstance(result["graphs"], list)
+
+    def test_filter_by_graph_type(self):
+        """Test query-blueprint-graph with graph_type filter."""
+        if not self.test_bp_path:
+            self.skipTest("No Blueprint found for testing")
+
+        result = self.client.call_tool("query-blueprint-graph", {
+            "asset_path": self.test_bp_path,
+            "graph_type": "event"
+        })
+
+        self.assertIn("graphs", result)
+        # All returned graphs should be event graphs
+        for graph in result.get("graphs", []):
+            self.assertEqual(graph.get("type"), "event")
+
+    def test_list_callables(self):
+        """Test query-blueprint-graph with list_callables=true (was list-blueprint-callables)."""
+        if not self.test_bp_path:
+            self.skipTest("No Blueprint found for testing")
+
+        result = self.client.call_tool("query-blueprint-graph", {
+            "asset_path": self.test_bp_path,
+            "list_callables": True
+        })
+
+        self.assertIn("callables", result)
+        self.assertIsInstance(result["callables"], list)
+
+    def test_callable_details(self):
+        """Test query-blueprint-graph with callable_name (was get-callable-details)."""
+        if not self.test_bp_path:
+            self.skipTest("No Blueprint found for testing")
+
+        # First list callables to find one
+        list_result = self.client.call_tool("query-blueprint-graph", {
+            "asset_path": self.test_bp_path,
+            "list_callables": True
+        })
+
+        callables = list_result.get("callables", [])
+        if not callables:
+            self.skipTest("No callables found in Blueprint")
+
+        callable_name = callables[0].get("name")
+
+        # Get details for that callable
+        detail_result = self.client.call_tool("query-blueprint-graph", {
+            "asset_path": self.test_bp_path,
+            "callable_name": callable_name
+        })
+
+        self.assertIn("callable", detail_result)
+        self.assertIn("nodes", detail_result)
+
+
+class TestQueryMaterial(McpTestCase):
+    """Test query-material tool (consolidated from get-material-graph, get-material-parameters)."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Find a Material to test with."""
+        super().setUpClass()
+
+        # Search for any Material
+        result = cls.client.call_tool("query-asset", {
+            "query": "*",
+            "class": "Material",
+            "limit": 1
+        })
+        if result.get("assets"):
+            cls.test_material_path = result["assets"][0]["path"]
+        else:
+            cls.test_material_path = None
+
+    def test_default_mode(self):
+        """Test query-material returns all info by default."""
+        if not self.test_material_path:
+            self.skipTest("No Material found for testing")
+
+        result = self.client.call_tool("query-material", {
+            "asset_path": self.test_material_path
+        })
+
+        self.assertIn("asset_path", result)
+        self.assertIn("asset_type", result)
+        # Default includes both graph and parameters
+        self.assertIn("graph", result)
+        self.assertIn("parameters", result)
+
+    def test_include_graph_only(self):
+        """Test query-material with include=graph (was get-material-graph)."""
+        if not self.test_material_path:
+            self.skipTest("No Material found for testing")
+
+        result = self.client.call_tool("query-material", {
+            "asset_path": self.test_material_path,
+            "include": "graph"
+        })
+
+        self.assertIn("graph", result)
+        # Should have expressions array
+        if result.get("graph"):
+            self.assertIn("expressions", result["graph"])
+
+    def test_include_parameters_only(self):
+        """Test query-material with include=parameters (was get-material-parameters)."""
+        if not self.test_material_path:
+            self.skipTest("No Material found for testing")
+
+        result = self.client.call_tool("query-material", {
+            "asset_path": self.test_material_path,
+            "include": "parameters"
+        })
+
+        self.assertIn("parameters", result)
+        params = result["parameters"]
+        # Should have parameter type arrays
+        self.assertIn("scalar", params)
+        self.assertIn("vector", params)
+        self.assertIn("texture", params)
 
 
 class TestActorLifecycle(McpTestCase):
@@ -373,10 +707,10 @@ class TestAssetLifecycle(McpTestCase):
         self.assertTrue(create_result.get("success"))
         self.created_assets.append(asset_path)
 
-        # Verify with analyze
-        analyze_result = self.client.call_tool("analyze-blueprint", {
+        # Verify with query-blueprint (was analyze-blueprint)
+        analyze_result = self.client.call_tool("query-blueprint", {
             "asset_path": asset_path,
-            "include_graph": False
+            "include": "functions"  # Just get minimal info
         })
         self.assertEqual(analyze_result.get("parent_class"), "Actor")
 
@@ -396,8 +730,8 @@ class TestAssetLifecycle(McpTestCase):
         })
         self.assertTrue(delete_result.get("success"), "delete-asset should succeed")
 
-        # Verify it's gone
-        search_result = self.client.call_tool("search-assets", {
+        # Verify it's gone (use query-asset which replaced search-assets)
+        search_result = self.client.call_tool("query-asset", {
             "query": "BP_MCP_TestDelete"
         })
         self.assertEqual(search_result.get("count", 0), 0,
@@ -455,7 +789,7 @@ class TestBlueprintModification(McpTestCase):
         self.assertIn(result.get("status"), ["compiled", "compiled_with_warnings"])
 
     def test_graph_modification_reflected(self):
-        """Test that graph modifications are visible in get-blueprint-graph."""
+        """Test that graph modifications are visible in query-blueprint-graph."""
         # Add a node
         add_result = self.client.call_tool("add-graph-node", {
             "asset_path": self.test_bp_path,
@@ -465,8 +799,8 @@ class TestBlueprintModification(McpTestCase):
         })
         self.assertTrue(add_result.get("success"))
 
-        # Read graph
-        graph_result = self.client.call_tool("get-blueprint-graph", {
+        # Read graph (use query-blueprint-graph which replaced get-blueprint-graph)
+        graph_result = self.client.call_tool("query-blueprint-graph", {
             "asset_path": self.test_bp_path,
             "graph_type": "event"
         })

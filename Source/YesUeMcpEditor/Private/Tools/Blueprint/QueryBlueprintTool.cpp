@@ -1,0 +1,537 @@
+// Copyright softdaddy-o 2024. All Rights Reserved.
+
+#include "Tools/Blueprint/QueryBlueprintTool.h"
+#include "YesUeMcpEditor.h"
+#include "Engine/Blueprint.h"
+#include "Engine/BlueprintGeneratedClass.h"
+#include "Engine/SimpleConstructionScript.h"
+#include "Engine/SCS_Node.h"
+#include "EdGraph/EdGraph.h"
+#include "K2Node.h"
+#include "K2Node_Event.h"
+#include "K2Node_FunctionEntry.h"
+#include "K2Node_CustomEvent.h"
+#include "Kismet2/BlueprintEditorUtils.h"
+
+FString UQueryBlueprintTool::GetToolDescription() const
+{
+	return TEXT("Query Blueprint structure: functions, variables, components, defaults, and event graph summary. "
+		"Use 'include' parameter to select sections: 'functions', 'variables', 'components', 'defaults', 'graph', 'all'.");
+}
+
+TMap<FString, FMcpSchemaProperty> UQueryBlueprintTool::GetInputSchema() const
+{
+	TMap<FString, FMcpSchemaProperty> Schema;
+
+	FMcpSchemaProperty AssetPath;
+	AssetPath.Type = TEXT("string");
+	AssetPath.Description = TEXT("Asset path to the Blueprint (e.g., /Game/Blueprints/BP_Character)");
+	AssetPath.bRequired = true;
+	Schema.Add(TEXT("asset_path"), AssetPath);
+
+	FMcpSchemaProperty Include;
+	Include.Type = TEXT("string");
+	Include.Description = TEXT("Sections to include: 'functions', 'variables', 'components', 'defaults', 'graph', or 'all' (default: 'all')");
+	Include.bRequired = false;
+	Schema.Add(TEXT("include"), Include);
+
+	FMcpSchemaProperty Detailed;
+	Detailed.Type = TEXT("boolean");
+	Detailed.Description = TEXT("Include detailed info (flags, metadata, parameters) for each item (default: true)");
+	Detailed.bRequired = false;
+	Schema.Add(TEXT("detailed"), Detailed);
+
+	// Defaults-specific options
+	FMcpSchemaProperty PropertyFilter;
+	PropertyFilter.Type = TEXT("string");
+	PropertyFilter.Description = TEXT("Filter properties by name (wildcards supported, e.g., '*Health*'). For defaults section.");
+	PropertyFilter.bRequired = false;
+	Schema.Add(TEXT("property_filter"), PropertyFilter);
+
+	FMcpSchemaProperty CategoryFilter;
+	CategoryFilter.Type = TEXT("string");
+	CategoryFilter.Description = TEXT("Filter properties by category (e.g., 'Stats'). For defaults section.");
+	CategoryFilter.bRequired = false;
+	Schema.Add(TEXT("category_filter"), CategoryFilter);
+
+	FMcpSchemaProperty IncludeInherited;
+	IncludeInherited.Type = TEXT("boolean");
+	IncludeInherited.Description = TEXT("Include inherited properties from parent classes (default: false). For defaults section.");
+	IncludeInherited.bRequired = false;
+	Schema.Add(TEXT("include_inherited"), IncludeInherited);
+
+	return Schema;
+}
+
+TArray<FString> UQueryBlueprintTool::GetRequiredParams() const
+{
+	return { TEXT("asset_path") };
+}
+
+FMcpToolResult UQueryBlueprintTool::Execute(
+	const TSharedPtr<FJsonObject>& Arguments,
+	const FMcpToolContext& Context)
+{
+	FString AssetPath;
+	if (!GetStringArg(Arguments, TEXT("asset_path"), AssetPath))
+	{
+		return FMcpToolResult::Error(TEXT("Missing required parameter: asset_path"));
+	}
+
+	FString Include = GetStringArgOrDefault(Arguments, TEXT("include"), TEXT("all")).ToLower();
+	bool bDetailed = GetBoolArgOrDefault(Arguments, TEXT("detailed"), true);
+
+	// Defaults-specific options
+	FString PropertyFilter = GetStringArgOrDefault(Arguments, TEXT("property_filter"), TEXT(""));
+	FString CategoryFilter = GetStringArgOrDefault(Arguments, TEXT("category_filter"), TEXT(""));
+	bool bIncludeInherited = GetBoolArgOrDefault(Arguments, TEXT("include_inherited"), false);
+
+	UE_LOG(LogYesUeMcp, Log, TEXT("query-blueprint: path='%s', include='%s', detailed=%s"),
+		*AssetPath, *Include, bDetailed ? TEXT("true") : TEXT("false"));
+
+	// Load the blueprint
+	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
+	if (!Blueprint)
+	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("query-blueprint: Failed to load Blueprint at '%s'"), *AssetPath);
+		return FMcpToolResult::Error(FString::Printf(TEXT("Failed to load Blueprint: %s"), *AssetPath));
+	}
+
+	// Build result JSON
+	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+	Result->SetStringField(TEXT("name"), Blueprint->GetName());
+	Result->SetStringField(TEXT("path"), AssetPath);
+
+	// Parent class info
+	if (Blueprint->ParentClass)
+	{
+		Result->SetStringField(TEXT("parent_class"), Blueprint->ParentClass->GetName());
+		Result->SetStringField(TEXT("parent_class_path"), Blueprint->ParentClass->GetPathName());
+	}
+	else
+	{
+		Result->SetStringField(TEXT("parent_class"), TEXT("None"));
+	}
+
+	// Blueprint type
+	FString BlueprintTypeStr;
+	switch (Blueprint->BlueprintType)
+	{
+	case BPTYPE_Normal: BlueprintTypeStr = TEXT("Normal"); break;
+	case BPTYPE_Const: BlueprintTypeStr = TEXT("Const"); break;
+	case BPTYPE_MacroLibrary: BlueprintTypeStr = TEXT("MacroLibrary"); break;
+	case BPTYPE_Interface: BlueprintTypeStr = TEXT("Interface"); break;
+	case BPTYPE_LevelScript: BlueprintTypeStr = TEXT("LevelScript"); break;
+	case BPTYPE_FunctionLibrary: BlueprintTypeStr = TEXT("FunctionLibrary"); break;
+	default: BlueprintTypeStr = TEXT("Unknown");
+	}
+	Result->SetStringField(TEXT("blueprint_type"), BlueprintTypeStr);
+
+	// Add requested sections
+	bool bAll = Include == TEXT("all");
+
+	if (bAll || Include == TEXT("functions"))
+	{
+		Result->SetObjectField(TEXT("functions"), ExtractFunctions(Blueprint, bDetailed));
+	}
+
+	if (bAll || Include == TEXT("variables"))
+	{
+		Result->SetObjectField(TEXT("variables"), ExtractVariables(Blueprint, bDetailed));
+	}
+
+	if (bAll || Include == TEXT("components"))
+	{
+		Result->SetObjectField(TEXT("components"), ExtractComponents(Blueprint, bDetailed));
+	}
+
+	if (bAll || Include == TEXT("graph"))
+	{
+		Result->SetObjectField(TEXT("event_graph"), ExtractEventGraphSummary(Blueprint));
+	}
+
+	if (bAll || Include == TEXT("defaults"))
+	{
+		Result->SetObjectField(TEXT("defaults"), ExtractDefaults(Blueprint, bIncludeInherited, CategoryFilter, PropertyFilter));
+	}
+
+	return FMcpToolResult::Json(Result);
+}
+
+TSharedPtr<FJsonObject> UQueryBlueprintTool::ExtractFunctions(UBlueprint* Blueprint, bool bDetailed) const
+{
+	TSharedPtr<FJsonObject> FunctionsObj = MakeShareable(new FJsonObject);
+	TArray<TSharedPtr<FJsonValue>> FunctionArray;
+
+	for (UEdGraph* Graph : Blueprint->FunctionGraphs)
+	{
+		if (!Graph)
+		{
+			continue;
+		}
+
+		TSharedPtr<FJsonObject> FuncObj = MakeShareable(new FJsonObject);
+		FuncObj->SetStringField(TEXT("name"), Graph->GetName());
+
+		if (bDetailed)
+		{
+			// Find function entry node for parameters
+			for (UEdGraphNode* Node : Graph->Nodes)
+			{
+				if (!Node) continue;
+				if (UK2Node_FunctionEntry* EntryNode = Cast<UK2Node_FunctionEntry>(Node))
+				{
+					// Get function flags
+					TArray<TSharedPtr<FJsonValue>> FlagsArray;
+					if (EntryNode->GetFunctionFlags() & FUNC_Public) FlagsArray.Add(MakeShareable(new FJsonValueString(TEXT("Public"))));
+					if (EntryNode->GetFunctionFlags() & FUNC_Protected) FlagsArray.Add(MakeShareable(new FJsonValueString(TEXT("Protected"))));
+					if (EntryNode->GetFunctionFlags() & FUNC_Private) FlagsArray.Add(MakeShareable(new FJsonValueString(TEXT("Private"))));
+					if (EntryNode->GetFunctionFlags() & FUNC_Static) FlagsArray.Add(MakeShareable(new FJsonValueString(TEXT("Static"))));
+					if (EntryNode->GetFunctionFlags() & FUNC_BlueprintPure) FlagsArray.Add(MakeShareable(new FJsonValueString(TEXT("Pure"))));
+					if (EntryNode->GetFunctionFlags() & FUNC_BlueprintCallable) FlagsArray.Add(MakeShareable(new FJsonValueString(TEXT("BlueprintCallable"))));
+					FuncObj->SetArrayField(TEXT("flags"), FlagsArray);
+
+					// Get parameters from pins
+					TArray<TSharedPtr<FJsonValue>> ParamsArray;
+					for (UEdGraphPin* Pin : EntryNode->Pins)
+					{
+						if (Pin && Pin->Direction == EGPD_Output && !Pin->PinName.IsEqual(UEdGraphSchema_K2::PN_Then))
+						{
+							TSharedPtr<FJsonObject> ParamObj = MakeShareable(new FJsonObject);
+							ParamObj->SetStringField(TEXT("name"), Pin->PinName.ToString());
+							ParamObj->SetStringField(TEXT("type"), Pin->PinType.PinCategory.ToString());
+							if (Pin->PinType.PinSubCategoryObject.IsValid())
+							{
+								ParamObj->SetStringField(TEXT("sub_type"), Pin->PinType.PinSubCategoryObject->GetName());
+							}
+							ParamsArray.Add(MakeShareable(new FJsonValueObject(ParamObj)));
+						}
+					}
+					FuncObj->SetArrayField(TEXT("parameters"), ParamsArray);
+					break;
+				}
+			}
+		}
+
+		FunctionArray.Add(MakeShareable(new FJsonValueObject(FuncObj)));
+	}
+
+	FunctionsObj->SetArrayField(TEXT("items"), FunctionArray);
+	FunctionsObj->SetNumberField(TEXT("count"), FunctionArray.Num());
+
+	return FunctionsObj;
+}
+
+TSharedPtr<FJsonObject> UQueryBlueprintTool::ExtractVariables(UBlueprint* Blueprint, bool bDetailed) const
+{
+	TSharedPtr<FJsonObject> VariablesObj = MakeShareable(new FJsonObject);
+	TArray<TSharedPtr<FJsonValue>> VarArray;
+
+	for (const FBPVariableDescription& Var : Blueprint->NewVariables)
+	{
+		TSharedPtr<FJsonObject> VarObj = MakeShareable(new FJsonObject);
+		VarObj->SetStringField(TEXT("name"), Var.VarName.ToString());
+		VarObj->SetStringField(TEXT("type"), Var.VarType.PinCategory.ToString());
+
+		if (Var.VarType.PinSubCategoryObject.IsValid())
+		{
+			VarObj->SetStringField(TEXT("sub_type"), Var.VarType.PinSubCategoryObject->GetName());
+		}
+
+		VarObj->SetBoolField(TEXT("is_array"), Var.VarType.IsArray());
+		VarObj->SetBoolField(TEXT("is_set"), Var.VarType.IsSet());
+		VarObj->SetBoolField(TEXT("is_map"), Var.VarType.IsMap());
+
+		if (bDetailed)
+		{
+			// Replication
+			if (Var.RepNotifyFunc != NAME_None)
+			{
+				VarObj->SetStringField(TEXT("replication"), TEXT("ReplicatedUsing"));
+				VarObj->SetStringField(TEXT("rep_notify_func"), Var.RepNotifyFunc.ToString());
+			}
+			else if (Var.PropertyFlags & CPF_Net)
+			{
+				VarObj->SetStringField(TEXT("replication"), TEXT("Replicated"));
+			}
+			else
+			{
+				VarObj->SetStringField(TEXT("replication"), TEXT("None"));
+			}
+
+			// Category
+			if (!Var.Category.IsEmpty())
+			{
+				VarObj->SetStringField(TEXT("category"), Var.Category.ToString());
+			}
+
+			// Flags
+			TArray<TSharedPtr<FJsonValue>> FlagsArray;
+			if (Var.PropertyFlags & CPF_Edit) FlagsArray.Add(MakeShareable(new FJsonValueString(TEXT("EditAnywhere"))));
+			if (Var.PropertyFlags & CPF_BlueprintVisible) FlagsArray.Add(MakeShareable(new FJsonValueString(TEXT("BlueprintReadWrite"))));
+			if (Var.PropertyFlags & CPF_ExposeOnSpawn) FlagsArray.Add(MakeShareable(new FJsonValueString(TEXT("ExposeOnSpawn"))));
+			VarObj->SetArrayField(TEXT("flags"), FlagsArray);
+		}
+
+		VarArray.Add(MakeShareable(new FJsonValueObject(VarObj)));
+	}
+
+	VariablesObj->SetArrayField(TEXT("items"), VarArray);
+	VariablesObj->SetNumberField(TEXT("count"), VarArray.Num());
+
+	return VariablesObj;
+}
+
+TSharedPtr<FJsonObject> UQueryBlueprintTool::ExtractComponents(UBlueprint* Blueprint, bool bDetailed) const
+{
+	TSharedPtr<FJsonObject> ComponentsObj = MakeShareable(new FJsonObject);
+	TArray<TSharedPtr<FJsonValue>> CompArray;
+
+	if (Blueprint->SimpleConstructionScript)
+	{
+		TArray<USCS_Node*> AllNodes = Blueprint->SimpleConstructionScript->GetAllNodes();
+
+		for (USCS_Node* Node : AllNodes)
+		{
+			if (!Node || !Node->ComponentTemplate)
+			{
+				continue;
+			}
+
+			TSharedPtr<FJsonObject> CompObj = MakeShareable(new FJsonObject);
+			CompObj->SetStringField(TEXT("name"), Node->GetVariableName().ToString());
+			CompObj->SetStringField(TEXT("class"), Node->ComponentClass ? Node->ComponentClass->GetName() : TEXT("Unknown"));
+
+			if (bDetailed)
+			{
+				// Parent component
+				if (Node->ParentComponentOrVariableName != NAME_None)
+				{
+					CompObj->SetStringField(TEXT("parent"), Node->ParentComponentOrVariableName.ToString());
+				}
+
+				// Is root
+				if (Blueprint->SimpleConstructionScript->GetRootNodes().Contains(Node))
+				{
+					CompObj->SetBoolField(TEXT("is_root"), true);
+				}
+			}
+
+			CompArray.Add(MakeShareable(new FJsonValueObject(CompObj)));
+		}
+	}
+
+	ComponentsObj->SetArrayField(TEXT("items"), CompArray);
+	ComponentsObj->SetNumberField(TEXT("count"), CompArray.Num());
+
+	return ComponentsObj;
+}
+
+TSharedPtr<FJsonObject> UQueryBlueprintTool::ExtractEventGraphSummary(UBlueprint* Blueprint) const
+{
+	TSharedPtr<FJsonObject> GraphObj = MakeShareable(new FJsonObject);
+	TArray<TSharedPtr<FJsonValue>> EventsArray;
+	TArray<TSharedPtr<FJsonValue>> CustomEventsArray;
+
+	for (UEdGraph* Graph : Blueprint->UbergraphPages)
+	{
+		if (!Graph)
+		{
+			continue;
+		}
+
+		for (UEdGraphNode* Node : Graph->Nodes)
+		{
+			if (!Node) continue;
+
+			// Standard events (BeginPlay, Tick, etc.)
+			if (UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node))
+			{
+				if (!Cast<UK2Node_CustomEvent>(EventNode))
+				{
+					TSharedPtr<FJsonObject> EventObj = MakeShareable(new FJsonObject);
+					EventObj->SetStringField(TEXT("name"), EventNode->GetFunctionName().ToString());
+					EventObj->SetStringField(TEXT("node_title"), EventNode->GetNodeTitle(ENodeTitleType::FullTitle).ToString());
+					EventsArray.Add(MakeShareable(new FJsonValueObject(EventObj)));
+				}
+			}
+
+			// Custom events
+			if (UK2Node_CustomEvent* CustomEventNode = Cast<UK2Node_CustomEvent>(Node))
+			{
+				TSharedPtr<FJsonObject> EventObj = MakeShareable(new FJsonObject);
+				EventObj->SetStringField(TEXT("name"), CustomEventNode->CustomFunctionName.ToString());
+
+				// Get parameters
+				TArray<TSharedPtr<FJsonValue>> ParamsArray;
+				for (UEdGraphPin* Pin : CustomEventNode->Pins)
+				{
+					if (Pin && Pin->Direction == EGPD_Output &&
+						!Pin->PinName.IsEqual(UEdGraphSchema_K2::PN_Then) &&
+						Pin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec)
+					{
+						TSharedPtr<FJsonObject> ParamObj = MakeShareable(new FJsonObject);
+						ParamObj->SetStringField(TEXT("name"), Pin->PinName.ToString());
+						ParamObj->SetStringField(TEXT("type"), Pin->PinType.PinCategory.ToString());
+						ParamsArray.Add(MakeShareable(new FJsonValueObject(ParamObj)));
+					}
+				}
+				EventObj->SetArrayField(TEXT("parameters"), ParamsArray);
+
+				CustomEventsArray.Add(MakeShareable(new FJsonValueObject(EventObj)));
+			}
+		}
+	}
+
+	GraphObj->SetArrayField(TEXT("events"), EventsArray);
+	GraphObj->SetArrayField(TEXT("custom_events"), CustomEventsArray);
+	GraphObj->SetNumberField(TEXT("event_count"), EventsArray.Num());
+	GraphObj->SetNumberField(TEXT("custom_event_count"), CustomEventsArray.Num());
+
+	return GraphObj;
+}
+
+TSharedPtr<FJsonObject> UQueryBlueprintTool::ExtractDefaults(UBlueprint* Blueprint, bool bIncludeInherited, const FString& CategoryFilter, const FString& PropertyFilter) const
+{
+	TSharedPtr<FJsonObject> DefaultsObj = MakeShareable(new FJsonObject);
+
+	// Get generated class
+	UBlueprintGeneratedClass* GenClass = Cast<UBlueprintGeneratedClass>(Blueprint->GeneratedClass);
+	if (!GenClass)
+	{
+		DefaultsObj->SetStringField(TEXT("error"), TEXT("Blueprint has no generated class"));
+		return DefaultsObj;
+	}
+
+	// Get CDO
+	UObject* CDO = GenClass->GetDefaultObject();
+	if (!CDO)
+	{
+		DefaultsObj->SetStringField(TEXT("error"), TEXT("Failed to get CDO"));
+		return DefaultsObj;
+	}
+
+	DefaultsObj->SetStringField(TEXT("generated_class"), GenClass->GetName());
+
+	// Iterate properties
+	TArray<TSharedPtr<FJsonValue>> PropertiesArray;
+	EFieldIteratorFlags::SuperClassFlags SuperFlags = bIncludeInherited
+		? EFieldIteratorFlags::IncludeSuper
+		: EFieldIteratorFlags::ExcludeSuper;
+
+	for (TFieldIterator<FProperty> PropIt(GenClass, SuperFlags); PropIt; ++PropIt)
+	{
+		FProperty* Property = *PropIt;
+		if (!Property)
+		{
+			continue;
+		}
+
+		// Apply property name filter
+		if (!PropertyFilter.IsEmpty())
+		{
+			FString PropName = Property->GetName();
+			if (!PropName.Contains(PropertyFilter.Replace(TEXT("*"), TEXT(""))))
+			{
+				continue;
+			}
+		}
+
+		// Apply category filter
+		if (!CategoryFilter.IsEmpty())
+		{
+			FString Category = Property->GetMetaData(TEXT("Category"));
+			if (Category.IsEmpty() || !Category.Contains(CategoryFilter))
+			{
+				continue;
+			}
+		}
+
+		// Get property value from CDO
+		void* ValuePtr = Property->ContainerPtrToValuePtr<void>(CDO);
+		if (!ValuePtr)
+		{
+			continue;
+		}
+
+		TSharedPtr<FJsonObject> PropertyJson = PropertyToJson(Property, ValuePtr, CDO);
+		if (PropertyJson.IsValid())
+		{
+			PropertiesArray.Add(MakeShareable(new FJsonValueObject(PropertyJson)));
+		}
+	}
+
+	DefaultsObj->SetArrayField(TEXT("properties"), PropertiesArray);
+	DefaultsObj->SetNumberField(TEXT("property_count"), PropertiesArray.Num());
+
+	return DefaultsObj;
+}
+
+TSharedPtr<FJsonObject> UQueryBlueprintTool::PropertyToJson(FProperty* Property, void* Container, UObject* Owner) const
+{
+	if (!Property || !Container)
+	{
+		return nullptr;
+	}
+
+	TSharedPtr<FJsonObject> PropertyJson = MakeShareable(new FJsonObject);
+
+	// Basic info
+	PropertyJson->SetStringField(TEXT("name"), Property->GetName());
+	PropertyJson->SetStringField(TEXT("type"), GetPropertyTypeString(Property));
+
+	// Category
+	FString Category = Property->GetMetaData(TEXT("Category"));
+	if (!Category.IsEmpty())
+	{
+		PropertyJson->SetStringField(TEXT("category"), Category);
+	}
+
+	// Export default value as string
+	FString DefaultValue;
+	Property->ExportText_Direct(DefaultValue, Container, Container, Owner, PPF_None);
+	PropertyJson->SetStringField(TEXT("default_value"), DefaultValue);
+
+	return PropertyJson;
+}
+
+FString UQueryBlueprintTool::GetPropertyTypeString(FProperty* Property) const
+{
+	if (!Property)
+	{
+		return TEXT("unknown");
+	}
+
+	if (Property->IsA<FBoolProperty>()) return TEXT("bool");
+	if (Property->IsA<FIntProperty>()) return TEXT("int32");
+	if (Property->IsA<FFloatProperty>()) return TEXT("float");
+	if (Property->IsA<FNameProperty>()) return TEXT("FName");
+	if (Property->IsA<FStrProperty>()) return TEXT("FString");
+	if (Property->IsA<FTextProperty>()) return TEXT("FText");
+
+	if (FObjectProperty* ObjectProp = CastField<FObjectProperty>(Property))
+	{
+		if (ObjectProp->PropertyClass)
+		{
+			return FString::Printf(TEXT("TObjectPtr<%s>"), *ObjectProp->PropertyClass->GetName());
+		}
+		return TEXT("TObjectPtr<UObject>");
+	}
+
+	if (FStructProperty* StructProp = CastField<FStructProperty>(Property))
+	{
+		if (StructProp->Struct)
+		{
+			return StructProp->Struct->GetName();
+		}
+		return TEXT("struct");
+	}
+
+	if (FArrayProperty* ArrayProp = CastField<FArrayProperty>(Property))
+	{
+		FString InnerType = GetPropertyTypeString(ArrayProp->Inner);
+		return FString::Printf(TEXT("TArray<%s>"), *InnerType);
+	}
+
+	return Property->GetClass()->GetName();
+}
