@@ -5,6 +5,8 @@
 #include "YesUeMcpEditor.h"
 #include "Engine/DataTable.h"
 #include "JsonObjectConverter.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 #include "ScopedTransaction.h"
 
 FString UAddDataTableRowTool::GetToolDescription() const
@@ -29,8 +31,8 @@ TMap<FString, FMcpSchemaProperty> UAddDataTableRowTool::GetInputSchema() const
 	Schema.Add(TEXT("row_name"), RowName);
 
 	FMcpSchemaProperty RowData;
-	RowData.Type = TEXT("object");
-	RowData.Description = TEXT("Row data as JSON object with property names matching the row struct");
+	RowData.Type = TEXT("string");
+	RowData.Description = TEXT("Row data as JSON string with property names matching the row struct. Example: {\"Name\":\"Value\",\"Count\":5}");
 	RowData.bRequired = false;
 	Schema.Add(TEXT("row_data"), RowData);
 
@@ -48,9 +50,18 @@ FMcpToolResult UAddDataTableRowTool::Execute(
 {
 	FString AssetPath = GetStringArgOrDefault(Arguments, TEXT("asset_path"));
 	FString RowName = GetStringArgOrDefault(Arguments, TEXT("row_name"));
+	FString RowDataString = GetStringArgOrDefault(Arguments, TEXT("row_data"));
 
-	const TSharedPtr<FJsonObject>* RowData = nullptr;
-	Arguments->TryGetObjectField(TEXT("row_data"), RowData);
+	// Parse row_data JSON string if provided
+	TSharedPtr<FJsonObject> RowData = nullptr;
+	if (!RowDataString.IsEmpty())
+	{
+		TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(RowDataString);
+		if (!FJsonSerializer::Deserialize(Reader, RowData) || !RowData.IsValid())
+		{
+			return FMcpToolResult::Error(TEXT("row_data must be valid JSON string"));
+		}
+	}
 
 	if (AssetPath.IsEmpty() || RowName.IsEmpty())
 	{
