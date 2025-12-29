@@ -48,9 +48,9 @@ bool FMcpServer::Start(int32 Port, const FString& BindAddress)
 		return false;
 	}
 
-	// Bind MCP route using /message endpoint (standard MCP SSE endpoint)
+	// Bind MCP route using /mcp endpoint (MCP Streamable HTTP standard)
 	McpRouteHandle = HttpRouter->BindRoute(
-		FHttpPath(TEXT("/message")),
+		FHttpPath(TEXT("/mcp")),
 		EHttpServerRequestVerbs::VERB_POST | EHttpServerRequestVerbs::VERB_GET | EHttpServerRequestVerbs::VERB_DELETE | EHttpServerRequestVerbs::VERB_OPTIONS,
 		FHttpRequestHandler::CreateRaw(this, &FMcpServer::HandleMcpRequest)
 	);
@@ -67,7 +67,7 @@ bool FMcpServer::Start(int32 Port, const FString& BindAddress)
 	bIsRunning = true;
 	ServerStatus = EMcpServerStatus::Running;
 	LastErrorMessage.Empty();
-	UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP Server started on http://%s:%d/message"), *BindAddress, ServerPort);
+	UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP Server started on http://%s:%d/mcp"), *BindAddress, ServerPort);
 
 	return true;
 }

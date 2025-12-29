@@ -15,7 +15,7 @@ This guide provides testing instructions for all implemented MCP tools.
 Before testing tools, verify the server is running:
 
 ```bash
-curl http://127.0.0.1:8080/message
+curl http://127.0.0.1:8080/mcp
 ```
 
 Expected response:
@@ -38,7 +38,7 @@ Expected response:
 
 **Test Case**:
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -68,7 +68,7 @@ curl -X POST http://127.0.0.1:8080/message \
 
 **Test Case**:
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -97,7 +97,7 @@ curl -X POST http://127.0.0.1:8080/message \
 
 **Test Case**:
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -126,7 +126,7 @@ curl -X POST http://127.0.0.1:8080/message \
 
 **Test Case**:
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -156,7 +156,7 @@ curl -X POST http://127.0.0.1:8080/message \
 
 **Test Case**:
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -190,7 +190,7 @@ curl -X POST http://127.0.0.1:8080/message \
 
 **Test Case**:
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -220,7 +220,7 @@ curl -X POST http://127.0.0.1:8080/message \
 
 **Test Case**:
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -254,7 +254,7 @@ curl -X POST http://127.0.0.1:8080/message \
 
 **Test Case**:
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -287,7 +287,7 @@ curl -X POST http://127.0.0.1:8080/message \
 
 **Test Case**:
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -320,7 +320,7 @@ curl -X POST http://127.0.0.1:8080/message \
 
 **Test Case - All Sections**:
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -337,7 +337,7 @@ curl -X POST http://127.0.0.1:8080/message \
 
 **Test Case - Input Only**:
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -369,7 +369,7 @@ curl -X POST http://127.0.0.1:8080/message \
 
 **Test Case - Parents**:
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -387,7 +387,7 @@ curl -X POST http://127.0.0.1:8080/message \
 
 **Test Case - Children**:
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -418,7 +418,7 @@ curl -X POST http://127.0.0.1:8080/message \
 
 **Test Case - DataTable**:
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -449,7 +449,7 @@ curl -X POST http://127.0.0.1:8080/message \
 
 **Test Case**:
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -523,7 +523,7 @@ Ask Claude Code:
 
 ### Invalid Asset Path
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -544,7 +544,7 @@ curl -X POST http://127.0.0.1:8080/message \
 
 ### Missing Required Parameter
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -563,7 +563,7 @@ curl -X POST http://127.0.0.1:8080/message \
 
 ### Invalid Filter Value
 ```bash
-curl -X POST http://127.0.0.1:8080/message \
+curl -X POST http://127.0.0.1:8080/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",

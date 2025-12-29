@@ -30,7 +30,7 @@ git clone https://github.com/softdaddy-o/yes-ue-mcp.git
 
 ### Configuration
 
-The plugin starts an HTTP server on `localhost:8080/message`. Configure in `Config/DefaultYesUeMcp.ini`:
+The plugin starts an HTTP server on `localhost:8080/mcp`. Configure in `Config/DefaultYesUeMcp.ini`:
 
 ```ini
 [/Script/YesUeMcpEditor.McpServerSettings]
@@ -51,7 +51,7 @@ BindAddress=127.0.0.1
 
 **Claude Code CLI**:
 ```bash
-claude mcp add --transport http unreal-engine http://localhost:8080/message
+claude mcp add --transport http unreal-engine http://localhost:8080/mcp
 ```
 
 **Claude Desktop** (`claude_desktop_config.json`):
@@ -59,7 +59,7 @@ claude mcp add --transport http unreal-engine http://localhost:8080/message
 {
   "mcpServers": {
     "unreal-engine": {
-      "url": "http://localhost:8080/message"
+      "url": "http://localhost:8080/mcp"
     }
   }
 }
@@ -70,7 +70,7 @@ claude mcp add --transport http unreal-engine http://localhost:8080/message
 {
   "mcpServers": {
     "unreal-engine": {
-      "url": "http://localhost:8080/message"
+      "url": "http://localhost:8080/mcp"
     }
   }
 }
@@ -81,7 +81,7 @@ claude mcp add --transport http unreal-engine http://localhost:8080/message
 {
   "mcpServers": [{
     "name": "unreal-engine",
-    "transport": { "type": "http", "url": "http://localhost:8080/message" }
+    "transport": { "type": "http", "url": "http://localhost:8080/mcp" }
   }]
 }
 ```
@@ -263,7 +263,7 @@ Search assets by name, class, or path with wildcard support.
 │  Claude / Cursor │ ──────────►  │  UE Editor                   │
 │  Windsurf / etc  │  JSON-RPC    │  └─ YesUeMcp Plugin          │
 │                  │ ◄──────────  │     └─ FHttpServerModule     │
-│                  │   Response   │        (localhost:8080/message)│
+│                  │   Response   │        (localhost:8080/mcp)│
 └──────────────────┘              └──────────────────────────────┘
 ```
 

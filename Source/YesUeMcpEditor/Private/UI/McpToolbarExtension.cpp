@@ -2,6 +2,7 @@
 
 #include "UI/McpToolbarExtension.h"
 #include "Subsystem/McpEditorSubsystem.h"
+#include "YesUeMcpEditor.h"
 #include "ToolMenus.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
@@ -51,11 +52,14 @@ void FMcpToolbarExtension::RegisterStatusBarExtension()
 	UToolMenus* ToolMenus = UToolMenus::Get();
 	if (!ToolMenus)
 	{
+		UE_LOG(LogYesUeMcpEditor, Warning, TEXT("MCP Status bar: UToolMenus not available"));
 		return;
 	}
 
-	// Extend the Level Editor status bar (bottom of the editor)
-	UToolMenu* StatusBar = ToolMenus->ExtendMenu("LevelEditor.StatusBar.ToolBar");
+	UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP Status bar: Registering extension..."));
+
+	// Primary: Status bar (UE 5.0-5.6)
+	UToolMenu* StatusBar = ToolMenus->ExtendMenu(TEXT("LevelEditor.StatusBar.ToolBar"));
 	if (StatusBar)
 	{
 		FToolMenuSection& Section = StatusBar->FindOrAddSection("YesUeMcp");
@@ -66,6 +70,24 @@ void FMcpToolbarExtension::RegisterStatusBarExtension()
 			FText::GetEmpty(),
 			true  // bNoIndent
 		));
+
+		UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP Status bar: Registered on LevelEditor.StatusBar.ToolBar"));
+	}
+
+	// Fallback: Main toolbar (in case status bar menu changed in UE 5.7+)
+	UToolMenu* MainToolbar = ToolMenus->ExtendMenu(TEXT("LevelEditor.LevelEditorToolBar.User"));
+	if (MainToolbar)
+	{
+		FToolMenuSection& Section = MainToolbar->FindOrAddSection("YesUeMcp");
+
+		Section.AddEntry(FToolMenuEntry::InitWidget(
+			"McpStatusToolbar",
+			CreateStatusWidget(),
+			FText::GetEmpty(),
+			true  // bNoIndent
+		));
+
+		UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP Status bar: Also registered on LevelEditor.LevelEditorToolBar.User (fallback)"));
 	}
 }
 
