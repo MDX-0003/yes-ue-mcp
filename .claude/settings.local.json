@@ -36,7 +36,24 @@
       "Bash(cmd /c \"robocopy F:\\\\src3\\\\yes-ue-mcp F:\\\\src_ue5\\\\GameAnimationSample56\\\\Plugins\\\\yes-ue-mcp /MIR /XD .git .claude /XF .gitignore .gitattributes\")",
       "Bash(cmd /c \"dir F:\\\\src_ue5\\\\GameAnimationSample56\\\\Plugins\\\\yes-ue-mcp\\\\*.uplugin\")",
       "Bash(\"D:/Program Files/Epic Games/UE_5.6/Engine/Build/BatchFiles/Build.bat\" GameAnimationSampleEditor Win64 Development -Project=\"F:/src_ue5/GameAnimationSample56/GameAnimationSample.uproject\" -Plugin=\"F:/src_ue5/GameAnimationSample56/Plugins/yes-ue-mcp/YesUeMcp.uplugin\" -TargetType=Editor)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(start \"\" \"F:\\\\src_ue5\\\\GameAnimationSample56\\\\GameAnimationSample.uproject\")",
+      "Bash(copy /b \"F:\\\\src_ue5\\\\GameAnimationSample56\\\\Plugins\\\\yes-ue-mcp\\\\Source\\\\YesUeMcpEditor\\\\Private\\\\YesUeMcpEditor.cpp\"+,, \"F:\\\\src_ue5\\\\GameAnimationSample56\\\\Plugins\\\\yes-ue-mcp\\\\Source\\\\YesUeMcpEditor\\\\Private\\\\YesUeMcpEditor.cpp\")",
+      "Bash(taskkill:*)",
+      "Bash(cmd /c \"taskkill /IM UnrealEditor.exe /F\")",
+      "Bash(cmd /c \"rmdir /S /Q F:\\\\src_ue5\\\\GameAnimationSample56\\\\Plugins\\\\yes-ue-mcp\")",
+      "Bash(cmd /c \"dir F:\\\\src_ue5\\\\GameAnimationSample56\\\\Plugins\\\\yes-ue-mcp\")",
+      "Bash(copy /Y \"F:\\\\src3\\\\yes-ue-mcp\\\\Tests\\\\test_mcp_tools.py\" \"F:\\\\src_ue5\\\\GameAnimationSample56\\\\Plugins\\\\yes-ue-mcp\\\\Tests\\\\test_mcp_tools.py\")",
+      "Bash(cmd /c copy:*)",
+      "Bash(cmd /c \"dir F:\\\\src3\\\\Covenant\\\\ElpisClient\\\\Plugins\\\\yes-ue-mcp 2>nul || echo Directory does not exist\")",
+      "Bash(cmd /c \"robocopy F:\\\\src3\\\\yes-ue-mcp F:\\\\src3\\\\Covenant\\\\ElpisClient\\\\Plugins\\\\yes-ue-mcp /MIR /XD .git .claude /XF .gitignore .gitattributes\")",
+      "Bash(cmd /c \"dir F:\\\\src3\\\\Covenant\\\\ElpisClient\\\\Plugins\\\\yes-ue-mcp\\\\*.uplugin\")",
+      "Bash(cmd /c \"rmdir /S /Q F:\\\\src3\\\\Covenant\\\\ElpisClient\\\\Plugins\\\\yes-ue-mcp\")",
+      "Bash(\"D:\\\\Program Files\\\\Epic Games\\\\UE_5.6\\\\Engine\\\\Build\\\\BatchFiles\\\\Build.bat\" GameAnimationSampleEditor Win64 Development -Project=\"F:\\\\src_ue5\\\\GameAnimationSample56\\\\GameAnimationSample.uproject\" -WaitMutex)",
+      "Bash(cmd /c \"if exist F:\\\\src3\\\\Covenant\\\\ElpisClient\\\\Plugins\\\\yes-ue-mcp\\\\Intermediate rmdir /S /Q F:\\\\src3\\\\Covenant\\\\ElpisClient\\\\Plugins\\\\yes-ue-mcp\\\\Intermediate\")",
+      "Bash(cmd /c:*)",
+      "Bash(set MCP_PORT=8081)",
+      "Bash(git clean:*)"
     ]
   },
   "enabledMcpjsonServers": [

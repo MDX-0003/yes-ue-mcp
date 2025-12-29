@@ -244,7 +244,7 @@ FMcpToolResult UAddGraphNodeTool::Execute(
 			}
 
 			// Find the function
-			UFunction* Function = FindObject<UFunction>(ANY_PACKAGE, *FunctionName);
+			UFunction* Function = FindFirstObject<UFunction>(*FunctionName, EFindFirstObjectOptions::None);
 			if (!Function)
 			{
 				// Try finding in common classes
@@ -261,6 +261,7 @@ FMcpToolResult UAddGraphNodeTool::Execute(
 			}
 
 			UK2Node_CallFunction* CallNode = NewObject<UK2Node_CallFunction>(TargetGraph);
+			CallNode->CreateNewGuid();
 			CallNode->SetFromFunction(Function);
 			CallNode->NodePosX = Position.X;
 			CallNode->NodePosY = Position.Y;
@@ -276,6 +277,7 @@ FMcpToolResult UAddGraphNodeTool::Execute(
 			}
 
 			UK2Node_VariableGet* GetNode = NewObject<UK2Node_VariableGet>(TargetGraph);
+			GetNode->CreateNewGuid();
 			GetNode->VariableReference.SetSelfMember(FName(*VariableName));
 			GetNode->NodePosX = Position.X;
 			GetNode->NodePosY = Position.Y;
@@ -291,6 +293,7 @@ FMcpToolResult UAddGraphNodeTool::Execute(
 			}
 
 			UK2Node_VariableSet* SetNode = NewObject<UK2Node_VariableSet>(TargetGraph);
+			SetNode->CreateNewGuid();
 			SetNode->VariableReference.SetSelfMember(FName(*VariableName));
 			SetNode->NodePosX = Position.X;
 			SetNode->NodePosY = Position.Y;

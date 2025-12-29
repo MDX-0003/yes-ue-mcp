@@ -140,10 +140,10 @@ FMcpToolResult UAddComponentTool::Execute(
 	}
 	else
 	{
-		CompClass = FindObject<UClass>(ANY_PACKAGE, *ComponentClass);
+		CompClass = FindFirstObject<UClass>(*ComponentClass, EFindFirstObjectOptions::ExactClass);
 		if (!CompClass)
 		{
-			CompClass = FindObject<UClass>(ANY_PACKAGE, *(TEXT("U") + ComponentClass));
+			CompClass = FindFirstObject<UClass>(*(TEXT("U") + ComponentClass), EFindFirstObjectOptions::ExactClass);
 		}
 	}
 

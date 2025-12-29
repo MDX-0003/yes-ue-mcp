@@ -140,19 +140,44 @@ FMcpToolResult FMcpToolRegistry::ExecuteTool(
 	const TSharedPtr<FJsonObject>& Arguments,
 	const FMcpToolContext& Context)
 {
+	UE_LOG(LogYesUeMcp, Log, TEXT("Executing tool: %s"), *ToolName);
+
 	UMcpToolBase* Tool = FindTool(ToolName);
 	if (!Tool)
 	{
+		UE_LOG(LogYesUeMcp, Error, TEXT("Tool not found: %s"), *ToolName);
 		return FMcpToolResult::Error(FString::Printf(TEXT("Tool not found: %s"), *ToolName));
 	}
 
 	// Check cancellation before execution
 	if (Context.IsCancelled())
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("Tool %s: Request cancelled"), *ToolName);
 		return FMcpToolResult::Error(TEXT("Request cancelled"));
 	}
 
-	return Tool->Execute(Arguments, Context);
+	// Execute with timing
+	double StartTime = FPlatformTime::Seconds();
+	FMcpToolResult Result = Tool->Execute(Arguments, Context);
+	double ElapsedMs = (FPlatformTime::Seconds() - StartTime) * 1000.0;
+
+	if (Result.bIsError)
+	{
+		// Extract error message from Content if available
+		FString ErrorText = TEXT("Unknown error");
+		if (Result.Content.Num() > 0 && Result.Content[0].IsValid())
+		{
+			Result.Content[0]->TryGetStringField(TEXT("text"), ErrorText);
+		}
+		UE_LOG(LogYesUeMcp, Warning, TEXT("Tool %s failed (%.1fms): %s"),
+			*ToolName, ElapsedMs, *ErrorText);
+	}
+	else
+	{
+		UE_LOG(LogYesUeMcp, Log, TEXT("Tool %s completed successfully (%.1fms)"), *ToolName, ElapsedMs);
+	}
+
+	return Result;
 }
 
 UMcpToolBase* FMcpToolRegistry::CreateToolInstance(UClass* ToolClass)

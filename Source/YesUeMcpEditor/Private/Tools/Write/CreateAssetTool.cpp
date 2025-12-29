@@ -134,7 +134,7 @@ FMcpToolResult UCreateAssetTool::Execute(
 		else
 		{
 			// Try to find the class
-			ParentUClass = FindObject<UClass>(ANY_PACKAGE, *ParentClass);
+			ParentUClass = FindFirstObject<UClass>(*ParentClass, EFindFirstObjectOptions::ExactClass);
 			if (!ParentUClass)
 			{
 				ParentUClass = AActor::StaticClass();
@@ -165,7 +165,7 @@ FMcpToolResult UCreateAssetTool::Execute(
 		// Find row struct
 		if (!RowStruct.IsEmpty())
 		{
-			UScriptStruct* Struct = FindObject<UScriptStruct>(ANY_PACKAGE, *RowStruct);
+			UScriptStruct* Struct = FindFirstObject<UScriptStruct>(*RowStruct, EFindFirstObjectOptions::ExactClass);
 			if (Struct)
 			{
 				Factory->Struct = Struct;

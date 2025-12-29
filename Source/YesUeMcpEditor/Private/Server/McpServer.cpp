@@ -65,6 +65,8 @@ bool FMcpServer::Start(int32 Port, const FString& BindAddress)
 	HttpServerModule.StartAllListeners();
 
 	bIsRunning = true;
+	ServerStatus = EMcpServerStatus::Running;
+	LastErrorMessage.Empty();
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP Server started on http://%s:%d/message"), *BindAddress, ServerPort);
 
 	return true;
@@ -88,8 +90,26 @@ void FMcpServer::Stop()
 	bIsRunning = false;
 	bInitialized = false;
 	CurrentSessionId.Empty();
+	ServerStatus = EMcpServerStatus::Stopped;
 
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP Server stopped"));
+}
+
+void FMcpServer::SetError(const FString& Message)
+{
+	LastErrorMessage = Message;
+	LastErrorTime = FDateTime::Now();
+	ServerStatus = EMcpServerStatus::Error;
+	UE_LOG(LogYesUeMcp, Error, TEXT("MCP Server Error: %s"), *Message);
+}
+
+void FMcpServer::ClearError()
+{
+	LastErrorMessage.Empty();
+	if (bIsRunning)
+	{
+		ServerStatus = EMcpServerStatus::Running;
+	}
 }
 
 bool FMcpServer::HandleMcpRequest(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
@@ -205,9 +225,46 @@ bool FMcpServer::HandleMcpRequest(const FHttpServerRequest& Request, const FHttp
 	// Process on game thread for UE API access
 	FMcpRequest McpRequest = ParsedRequest.GetValue();
 
+	// Track pending requests
+	int32 CurrentPending = PendingRequestCount.Increment();
+	if (CurrentPending > MaxPendingRequests)
+	{
+		ServerStatus = EMcpServerStatus::Overloaded;
+		UE_LOG(LogYesUeMcp, Warning, TEXT("MCP Server overloaded: %d pending requests"), CurrentPending);
+	}
+
 	AsyncTask(ENamedThreads::GameThread, [this, McpRequest, OnComplete]()
 	{
-		FMcpResponse Response = ProcessRequest(McpRequest);
+		FMcpResponse Response;
+
+		// Wrap in try-catch to prevent crashes from propagating
+#if PLATFORM_EXCEPTIONS_DISABLED
+		Response = ProcessRequest(McpRequest);
+#else
+		try
+		{
+			Response = ProcessRequest(McpRequest);
+		}
+		catch (const std::exception& e)
+		{
+			FString ErrorMsg = FString::Printf(TEXT("Exception during request processing: %s"), ANSI_TO_TCHAR(e.what()));
+			SetError(ErrorMsg);
+			Response = FMcpResponse::Error(McpRequest.Id, EMcpErrorCode::InternalError, ErrorMsg);
+		}
+		catch (...)
+		{
+			FString ErrorMsg = TEXT("Unknown exception during request processing");
+			SetError(ErrorMsg);
+			Response = FMcpResponse::Error(McpRequest.Id, EMcpErrorCode::InternalError, ErrorMsg);
+		}
+#endif
+
+		// Decrement pending count
+		int32 Remaining = PendingRequestCount.Decrement();
+		if (Remaining <= MaxPendingRequests && ServerStatus == EMcpServerStatus::Overloaded)
+		{
+			ServerStatus = EMcpServerStatus::Running;
+		}
 
 		// Handle notification (no response needed)
 		if (McpRequest.IsNotification())

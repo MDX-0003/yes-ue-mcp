@@ -116,12 +116,24 @@ FSlateColor FMcpToolbarExtension::GetStatusColor()
 		return FSlateColor(FLinearColor::Gray);
 	}
 
-	if (Subsystem->IsServerRunning())
+	FMcpServer* Server = Subsystem->GetServer();
+	if (!Server)
 	{
-		return FSlateColor(FLinearColor::Green);
+		return FSlateColor(FLinearColor::Gray);
 	}
 
-	return FSlateColor(FLinearColor::Red);
+	switch (Server->GetStatus())
+	{
+	case EMcpServerStatus::Running:
+		return FSlateColor(FLinearColor::Green);
+	case EMcpServerStatus::Overloaded:
+		return FSlateColor(FLinearColor(1.0f, 0.5f, 0.0f)); // Orange
+	case EMcpServerStatus::Error:
+		return FSlateColor(FLinearColor::Yellow);
+	case EMcpServerStatus::Stopped:
+	default:
+		return FSlateColor(FLinearColor::Red);
+	}
 }
 
 FText FMcpToolbarExtension::GetStatusTooltip()
@@ -138,22 +150,52 @@ FText FMcpToolbarExtension::GetStatusTooltip()
 		Version = Plugin->GetDescriptor().VersionName;
 	}
 
+	FMcpServer* Server = Subsystem->GetServer();
 	FString Status;
-	if (Subsystem->IsServerRunning())
+	FString Extra;
+
+	if (Server)
 	{
-		int32 Port = Subsystem->GetActualPort();
-		Status = FString::Printf(TEXT("Running on port %d"), Port);
+		switch (Server->GetStatus())
+		{
+		case EMcpServerStatus::Running:
+			Status = FString::Printf(TEXT("Running on port %d"), Subsystem->GetActualPort());
+			if (Server->GetPendingRequestCount() > 0)
+			{
+				Extra = FString::Printf(TEXT("\nPending requests: %d"), Server->GetPendingRequestCount());
+			}
+			break;
+		case EMcpServerStatus::Overloaded:
+			Status = FString::Printf(TEXT("OVERLOADED on port %d"), Subsystem->GetActualPort());
+			Extra = FString::Printf(TEXT("\nPending requests: %d (max: %d)"),
+				Server->GetPendingRequestCount(), 10);
+			break;
+		case EMcpServerStatus::Error:
+			Status = TEXT("ERROR");
+			if (!Server->GetLastError().IsEmpty())
+			{
+				Extra = FString::Printf(TEXT("\nLast error: %s"), *Server->GetLastError());
+			}
+			break;
+		case EMcpServerStatus::Stopped:
+		default:
+			{
+				int32 ConfiguredPort = Subsystem->GetSettings() ? Subsystem->GetSettings()->ServerPort : 8080;
+				Status = FString::Printf(TEXT("Stopped (port %d may be in use)"), ConfiguredPort);
+			}
+			break;
+		}
 	}
 	else
 	{
-		int32 ConfiguredPort = Subsystem->GetSettings() ? Subsystem->GetSettings()->ServerPort : 8080;
-		Status = FString::Printf(TEXT("Stopped (port %d may be in use)"), ConfiguredPort);
+		Status = TEXT("Not initialized");
 	}
 
 	return FText::Format(
-		LOCTEXT("McpTooltipFormat", "YesUeMcp v{0}\nStatus: {1}\n\nClick to restart server"),
+		LOCTEXT("McpTooltipFormat", "YesUeMcp v{0}\nStatus: {1}{2}\n\nClick to restart server"),
 		FText::FromString(Version),
-		FText::FromString(Status));
+		FText::FromString(Status),
+		FText::FromString(Extra));
 }
 
 FReply FMcpToolbarExtension::OnStatusButtonClicked()

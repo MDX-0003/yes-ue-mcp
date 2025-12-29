@@ -153,10 +153,10 @@ FMcpToolResult USpawnActorTool::Execute(
 		else
 		{
 			// Try to find by name
-			SpawnClass = FindObject<UClass>(ANY_PACKAGE, *ActorClass);
+			SpawnClass = FindFirstObject<UClass>(*ActorClass, EFindFirstObjectOptions::ExactClass);
 			if (!SpawnClass)
 			{
-				SpawnClass = FindObject<UClass>(ANY_PACKAGE, *(TEXT("A") + ActorClass));
+				SpawnClass = FindFirstObject<UClass>(*(TEXT("A") + ActorClass), EFindFirstObjectOptions::ExactClass);
 			}
 		}
 	}

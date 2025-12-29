@@ -92,8 +92,8 @@ FMcpToolResult UClassHierarchyTool::Execute(
 
 UClass* UClassHierarchyTool::FindClassByName(const FString& ClassName) const
 {
-	// Try finding as a C++ class first
-	UClass* Class = FindObject<UClass>(nullptr, *ClassName);
+	// Try finding as a C++ class using FindFirstObject (more reliable)
+	UClass* Class = FindFirstObject<UClass>(*ClassName, EFindFirstObjectOptions::ExactClass);
 	if (Class)
 	{
 		return Class;
@@ -102,14 +102,14 @@ UClass* UClassHierarchyTool::FindClassByName(const FString& ClassName) const
 	// Try with "U" prefix for UObject classes
 	if (!ClassName.StartsWith(TEXT("U")) && !ClassName.StartsWith(TEXT("A")) && !ClassName.StartsWith(TEXT("F")))
 	{
-		Class = FindObject<UClass>(nullptr, *(TEXT("U") + ClassName));
+		Class = FindFirstObject<UClass>(*(TEXT("U") + ClassName), EFindFirstObjectOptions::ExactClass);
 		if (Class)
 		{
 			return Class;
 		}
 
 		// Try with "A" prefix for Actor classes
-		Class = FindObject<UClass>(nullptr, *(TEXT("A") + ClassName));
+		Class = FindFirstObject<UClass>(*(TEXT("A") + ClassName), EFindFirstObjectOptions::ExactClass);
 		if (Class)
 		{
 			return Class;

@@ -129,10 +129,10 @@ FMcpToolResult UAddWidgetTool::Execute(
 	}
 	else
 	{
-		WClass = FindObject<UClass>(ANY_PACKAGE, *WidgetClass);
+		WClass = FindFirstObject<UClass>(*WidgetClass, EFindFirstObjectOptions::ExactClass);
 		if (!WClass)
 		{
-			WClass = FindObject<UClass>(ANY_PACKAGE, *(TEXT("U") + WidgetClass));
+			WClass = FindFirstObject<UClass>(*(TEXT("U") + WidgetClass), EFindFirstObjectOptions::ExactClass);
 		}
 	}
 

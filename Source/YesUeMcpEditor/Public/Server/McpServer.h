@@ -8,6 +8,15 @@
 #include "Protocol/McpTypes.h"
 #include "Protocol/McpCapabilities.h"
 
+/** Server health status */
+enum class EMcpServerStatus : uint8
+{
+	Stopped,
+	Running,
+	Error,
+	Overloaded
+};
+
 /**
  * MCP HTTP Server
  * Handles incoming HTTP requests and dispatches to tools
@@ -36,6 +45,18 @@ public:
 	/** Get server info */
 	FMcpServerInfo GetServerInfo() const { return ServerInfo; }
 
+	/** Get current server status */
+	EMcpServerStatus GetStatus() const { return ServerStatus; }
+
+	/** Get last error message */
+	FString GetLastError() const { return LastErrorMessage; }
+
+	/** Get number of pending requests */
+	int32 GetPendingRequestCount() const { return PendingRequestCount.GetValue(); }
+
+	/** Clear error state */
+	void ClearError();
+
 private:
 	/** HTTP router handle */
 	TSharedPtr<IHttpRouter> HttpRouter;
@@ -56,6 +77,18 @@ private:
 	/** Server configuration */
 	FMcpServerCapabilities Capabilities;
 	FMcpServerInfo ServerInfo;
+
+	/** Server health tracking */
+	EMcpServerStatus ServerStatus = EMcpServerStatus::Stopped;
+	FString LastErrorMessage;
+	FThreadSafeCounter PendingRequestCount;
+	FDateTime LastErrorTime;
+
+	/** Maximum concurrent requests before marking as overloaded */
+	static constexpr int32 MaxPendingRequests = 10;
+
+	/** Set error state with message */
+	void SetError(const FString& Message);
 
 	/** Handle incoming MCP request */
 	bool HandleMcpRequest(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete);

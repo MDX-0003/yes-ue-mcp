@@ -30,13 +30,10 @@ git clone https://github.com/softdaddy-o/yes-ue-mcp.git
 
 ### Configuration
 
-The plugin starts an HTTP server on `localhost:8080/message` by default. Configure in `Config/DefaultYesUeMcp.ini`:
+The plugin starts an HTTP server on `localhost:8080/message`. Configure in `Config/DefaultYesUeMcp.ini`:
 
 ```ini
 [/Script/YesUeMcpEditor.McpServerSettings]
-; HTTP server port (default: 8080)
-ServerPort=8080
-
 ; Auto-start server when editor opens
 bAutoStartServer=true
 

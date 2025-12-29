@@ -64,13 +64,20 @@ FMcpToolResult UDeleteAssetTool::Execute(
 	TArray<UObject*> ObjectsToDelete;
 	ObjectsToDelete.Add(Object);
 
-	int32 DeletedCount = ObjectTools::DeleteObjects(ObjectsToDelete, false);
+	// Notify asset registry before deletion
+	FAssetRegistryModule::AssetDeleted(Object);
+
+	int32 DeletedCount = ObjectTools::DeleteObjects(ObjectsToDelete, /*bShowConfirmation=*/false);
 
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 	Result->SetStringField(TEXT("asset_path"), AssetPath);
 
 	if (DeletedCount > 0)
 	{
+		// Force garbage collection to clean up orphaned generated classes (BP_xxx_C, SKEL_xxx_C)
+		// This ensures the asset can be recreated with the same name without memory conflicts
+		CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+
 		Result->SetBoolField(TEXT("success"), true);
 		Result->SetStringField(TEXT("status"), TEXT("deleted"));
 
@@ -79,7 +86,7 @@ FMcpToolResult UDeleteAssetTool::Execute(
 	else
 	{
 		Result->SetBoolField(TEXT("success"), false);
-		Result->SetStringField(TEXT("error"), TEXT("Failed to delete asset. It may be in use."));
+		Result->SetStringField(TEXT("error"), TEXT("Failed to delete asset. It may be in use or open in an editor."));
 
 		UE_LOG(LogYesUeMcp, Warning, TEXT("delete-asset: Failed to delete %s"), *AssetPath);
 	}

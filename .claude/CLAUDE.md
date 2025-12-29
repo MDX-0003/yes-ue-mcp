@@ -69,8 +69,8 @@ git branch -D release-temp
 **Secondary Test Project:** GameAnimationSample56 (UE 5.6)
 - **Project Path:** `F:\src_ue5\GameAnimationSample56\`
 - **Plugin Install Path:** `F:\src_ue5\GameAnimationSample56\Plugins\yes-ue-mcp\`
-- **MCP Endpoint:** `http://127.0.0.1:8081/message`
-- **Status:** Active test environment for UE 5.6
+- **MCP Endpoint:** `http://127.0.0.1:8080/message`
+- **Status:** Secondary test environment for UE 5.6
 
 ## Module Structure
 
@@ -110,7 +110,7 @@ git branch -D release-temp
 - **Protocol:** MCP 2024-11-05 with JSON-RPC 2.0
 - **Transport:** HTTP (Streamable HTTP ready)
 - **Endpoint:** `/message`
-- **Port:** 8080 (configurable)
+- **Port:** 8080 (fixed)
 - **CORS:** Enabled for cross-origin requests
 
 ## Available Tools (28 total)
