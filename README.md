@@ -34,12 +34,18 @@ The plugin starts an HTTP server on `localhost:8080/message`. Configure in `Conf
 
 ```ini
 [/Script/YesUeMcpEditor.McpServerSettings]
+; HTTP server port (default: 8080)
+; Change this if running multiple UE instances
+ServerPort=8080
+
 ; Auto-start server when editor opens
 bAutoStartServer=true
 
 ; Bind address (default: localhost for security)
 BindAddress=127.0.0.1
 ```
+
+> **Tip:** When running multiple UE projects, set a different `ServerPort` for each project (e.g., 8080, 8081, 8082).
 
 ### Client Configuration
 
