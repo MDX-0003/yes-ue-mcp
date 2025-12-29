@@ -74,8 +74,7 @@ FMcpToolResult UDeleteAssetTool::Execute(
 
 	if (DeletedCount > 0)
 	{
-		// Force garbage collection to clean up orphaned generated classes (BP_xxx_C, SKEL_xxx_C)
-		// This ensures the asset can be recreated with the same name without memory conflicts
+		// Force garbage collection to clean up any orphaned objects
 		CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
 
 		Result->SetBoolField(TEXT("success"), true);

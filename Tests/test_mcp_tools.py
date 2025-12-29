@@ -28,6 +28,7 @@ Requirements:
 
 Environment Variables:
     MCP_HOST: MCP server host (default: 127.0.0.1)
+    MCP_PORT: MCP server port (default: 8080)
 """
 
 import json
@@ -122,7 +123,7 @@ class McpTestCase(unittest.TestCase):
     def setUpClass(cls):
         """Set up MCP client for all tests."""
         host = os.environ.get("MCP_HOST", "127.0.0.1")
-        port = 8080  # Fixed port - MCP server always runs on 8080
+        port = int(os.environ.get("MCP_PORT", "8080"))
         cls.client = McpClient(host, port)
 
         # Verify connection

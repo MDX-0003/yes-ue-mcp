@@ -103,9 +103,9 @@ FMcpToolResult UAddDataTableRowTool::Execute(
 	RowStruct->InitializeStruct(RowMemory);
 
 	// If row data is provided, try to populate it
-	if (RowData && RowData->IsValid())
+	if (RowData.IsValid())
 	{
-		FJsonObjectConverter::JsonObjectToUStruct(RowData->ToSharedRef(), RowStruct, RowMemory);
+		FJsonObjectConverter::JsonObjectToUStruct(RowData.ToSharedRef(), RowStruct, RowMemory);
 	}
 
 	// Add the row

@@ -18,6 +18,11 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/GameModeBase.h"
 #include "ScopedTransaction.h"
+#include "WidgetBlueprint.h"
+#include "Blueprint/UserWidget.h"
+#include "Animation/AnimBlueprint.h"
+#include "Animation/Skeleton.h"
+#include "Animation/AnimInstance.h"
 
 FString UCreateAssetTool::GetToolDescription() const
 {
@@ -42,7 +47,7 @@ TMap<FString, FMcpSchemaProperty> UCreateAssetTool::GetInputSchema() const
 
 	FMcpSchemaProperty ParentClass;
 	ParentClass.Type = TEXT("string");
-	ParentClass.Description = TEXT("Parent class for Blueprints (e.g., 'Actor', 'Character', 'Pawn'). Default: 'Actor'");
+	ParentClass.Description = TEXT("Parent class for Blueprints (e.g., 'Actor', 'Character', 'Pawn'). For AnimBlueprint, specify skeleton asset path. Default: 'Actor'");
 	ParentClass.bRequired = false;
 	Schema.Add(TEXT("parent_class"), ParentClass);
 
@@ -182,9 +187,63 @@ FMcpToolResult UCreateAssetTool::Execute(
 		Factory->WorldType = EWorldType::Editor;
 		CreatedAsset = AssetTools.CreateAsset(AssetName, PackagePath, UWorld::StaticClass(), Factory);
 	}
+	// Create WidgetBlueprint
+	else if (AssetClass.Equals(TEXT("WidgetBlueprint"), ESearchCase::IgnoreCase) ||
+	         AssetClass.Equals(TEXT("Widget"), ESearchCase::IgnoreCase) ||
+	         AssetClass.Equals(TEXT("UserWidget"), ESearchCase::IgnoreCase))
+	{
+		UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
+		Factory->ParentClass = UUserWidget::StaticClass();
+
+		CreatedAsset = AssetTools.CreateAsset(AssetName, PackagePath, UBlueprint::StaticClass(), Factory);
+	}
+	// Create AnimBlueprint
+	else if (AssetClass.Equals(TEXT("AnimBlueprint"), ESearchCase::IgnoreCase) ||
+	         AssetClass.Equals(TEXT("AnimBP"), ESearchCase::IgnoreCase))
+	{
+		// AnimBlueprint requires a skeleton - try to find one or return error
+		USkeleton* TargetSkeleton = nullptr;
+
+		// First try to find a skeleton if specified in parent_class (reusing the parameter)
+		if (!ParentClass.Equals(TEXT("Actor"), ESearchCase::IgnoreCase) && !ParentClass.IsEmpty())
+		{
+			TargetSkeleton = LoadObject<USkeleton>(nullptr, *ParentClass);
+		}
+
+		// If no skeleton specified, try to find any skeleton in the project
+		if (!TargetSkeleton)
+		{
+			FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+			TArray<FAssetData> SkeletonAssets;
+			AssetRegistryModule.Get().GetAssetsByClass(USkeleton::StaticClass()->GetClassPathName(), SkeletonAssets);
+
+			if (SkeletonAssets.Num() > 0)
+			{
+				TargetSkeleton = Cast<USkeleton>(SkeletonAssets[0].GetAsset());
+			}
+		}
+
+		if (!TargetSkeleton)
+		{
+			return FMcpToolResult::Error(TEXT("AnimBlueprint requires a skeleton. No skeleton found in project. Specify skeleton path in parent_class parameter."));
+		}
+
+		CreatedAsset = FKismetEditorUtilities::CreateBlueprint(
+			UAnimInstance::StaticClass(),
+			CreatePackage(*AssetPath),
+			*AssetName,
+			BPTYPE_Normal,
+			UAnimBlueprint::StaticClass(),
+			UBlueprintGeneratedClass::StaticClass());
+
+		if (UAnimBlueprint* AnimBP = Cast<UAnimBlueprint>(CreatedAsset))
+		{
+			AnimBP->TargetSkeleton = TargetSkeleton;
+		}
+	}
 	else
 	{
-		return FMcpToolResult::Error(FString::Printf(TEXT("Unsupported asset class: %s. Supported: Blueprint, Material, DataTable, Level"), *AssetClass));
+		return FMcpToolResult::Error(FString::Printf(TEXT("Unsupported asset class: %s. Supported: Blueprint, Material, DataTable, Level, WidgetBlueprint, AnimBlueprint"), *AssetClass));
 	}
 
 	if (!CreatedAsset)
