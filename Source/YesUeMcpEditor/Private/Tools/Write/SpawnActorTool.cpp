@@ -33,12 +33,14 @@ TMap<FString, FMcpSchemaProperty> USpawnActorTool::GetInputSchema() const
 
 	FMcpSchemaProperty Location;
 	Location.Type = TEXT("array");
+	Location.ItemsType = TEXT("number");
 	Location.Description = TEXT("Spawn location as [x, y, z]");
 	Location.bRequired = false;
 	Schema.Add(TEXT("location"), Location);
 
 	FMcpSchemaProperty Rotation;
 	Rotation.Type = TEXT("array");
+	Rotation.ItemsType = TEXT("number");
 	Rotation.Description = TEXT("Spawn rotation as [pitch, yaw, roll]");
 	Rotation.bRequired = false;
 	Schema.Add(TEXT("rotation"), Rotation);

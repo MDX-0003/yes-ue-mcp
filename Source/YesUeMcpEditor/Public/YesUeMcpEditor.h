@@ -4,9 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
+#include "YesUeMcp.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogYesUeMcpEditor, Log, All);
-DECLARE_LOG_CATEGORY_EXTERN(LogYesUeMcp, Log, All);
+// Note: LogYesUeMcp is declared in YesUeMcp.h
 
 class FYesUeMcpEditorModule : public IModuleInterface
 {

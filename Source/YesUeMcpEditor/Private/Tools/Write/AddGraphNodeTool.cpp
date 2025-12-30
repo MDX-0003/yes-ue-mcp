@@ -70,6 +70,7 @@ TMap<FString, FMcpSchemaProperty> UAddGraphNodeTool::GetInputSchema() const
 
 	FMcpSchemaProperty Position;
 	Position.Type = TEXT("array");
+	Position.ItemsType = TEXT("number");
 	Position.Description = TEXT("Node position as [x, y]");
 	Position.bRequired = false;
 	Schema.Add(TEXT("position"), Position);

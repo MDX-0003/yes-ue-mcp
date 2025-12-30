@@ -193,6 +193,14 @@ TSharedPtr<FJsonObject> FMcpSchemaProperty::ToJson() const
 		JsonObject->SetField(TEXT("default"), Default);
 	}
 
+	// Add items schema for array types
+	if (Type == TEXT("array") && !ItemsType.IsEmpty())
+	{
+		TSharedPtr<FJsonObject> ItemsObj = MakeShareable(new FJsonObject);
+		ItemsObj->SetStringField(TEXT("type"), ItemsType);
+		JsonObject->SetObjectField(TEXT("items"), ItemsObj);
+	}
+
 	return JsonObject;
 }
 

@@ -160,6 +160,10 @@ struct YESUEMCP_API FMcpSchemaProperty
 	/** Default value (optional) */
 	TSharedPtr<FJsonValue> Default;
 
+	/** Items type for array properties (e.g., "number" for array of numbers) */
+	UPROPERTY()
+	FString ItemsType;
+
 	TSharedPtr<FJsonObject> ToJson() const;
 };
 

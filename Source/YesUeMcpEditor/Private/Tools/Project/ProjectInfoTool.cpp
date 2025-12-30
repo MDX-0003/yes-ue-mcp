@@ -9,7 +9,6 @@
 #include "GameplayTagsSettings.h"
 #include "GameMapsSettings.h"
 #include "YesUeMcpEditor.h"
-#include "YesUeMcp.h"
 #include "Subsystem/McpEditorSubsystem.h"
 
 FString UProjectInfoTool::GetToolDescription() const

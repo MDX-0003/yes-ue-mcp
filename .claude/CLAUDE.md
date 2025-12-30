@@ -105,16 +105,24 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 
 ## Version Management
 
-- **Plugin version is defined in `YesUeMcp.uplugin`** (`VersionName` field)
-- **Increment version when:**
-  - Adding a new tool
-  - Changing MCP protocol behavior
-  - Modifying tool input/output schema
-  - Breaking changes to existing tools
+**Version is defined in TWO places (keep in sync):**
+1. `YesUeMcp.uplugin` - `VersionName` field (read by UE plugin system)
+2. `Source/YesUeMcp/Public/YesUeMcp.h` - `YESUEMCP_VERSION` macro (compile-time constant)
+
+**IMPORTANT: Always increment version when modifying code!**
+
 - Use semantic versioning: `MAJOR.MINOR.PATCH`
-  - MAJOR: Breaking changes
-  - MINOR: New features (new tools, new parameters)
-  - PATCH: Bug fixes
+  - **MAJOR**: Breaking changes to existing tools or protocol
+  - **MINOR**: New features (new tools, new parameters)
+  - **PATCH**: Bug fixes, internal improvements, documentation
+
+**When to increment:**
+- Adding a new tool → MINOR
+- Adding new parameter to existing tool → MINOR
+- Changing tool input/output schema → MINOR (or MAJOR if breaking)
+- Bug fixes → PATCH
+- Internal refactoring → PATCH
+- Any code change that affects behavior → PATCH minimum
 
 ## Key Files
 
