@@ -5,6 +5,9 @@
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 
+/** Plugin version - keep in sync with YesUeMcp.uplugin */
+#define YESUEMCP_VERSION TEXT("1.7.0")
+
 DECLARE_LOG_CATEGORY_EXTERN(LogYesUeMcp, Log, All);
 
 class FYesUeMcpModule : public IModuleInterface

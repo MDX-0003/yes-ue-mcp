@@ -9,6 +9,8 @@
 #include "GameplayTagsSettings.h"
 #include "GameMapsSettings.h"
 #include "YesUeMcpEditor.h"
+#include "YesUeMcp.h"
+#include "Subsystem/McpEditorSubsystem.h"
 
 FString UProjectInfoTool::GetToolDescription() const
 {
@@ -70,19 +72,30 @@ FMcpToolResult UProjectInfoTool::Execute(
 	// Engine information
 	Result->SetStringField(TEXT("engine_version"), FEngineVersion::Current().ToString());
 
-	// Plugin information - read from plugin descriptor
+	// Plugin information - use compile-time version constant
 	TSharedPtr<FJsonObject> PluginInfo = MakeShareable(new FJsonObject);
 	PluginInfo->SetStringField(TEXT("name"), TEXT("YesUeMcp"));
-
-	// Get version from plugin manager
-	FString PluginVersion = TEXT("unknown");
-	TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("YesUeMcp"));
-	if (Plugin.IsValid())
-	{
-		PluginVersion = Plugin->GetDescriptor().VersionName;
-	}
-	PluginInfo->SetStringField(TEXT("version"), PluginVersion);
+	PluginInfo->SetStringField(TEXT("version"), YESUEMCP_VERSION);
 	Result->SetObjectField(TEXT("plugin"), PluginInfo);
+
+	// MCP Server information
+	TSharedPtr<FJsonObject> ServerInfo = MakeShareable(new FJsonObject);
+	UMcpEditorSubsystem* McpSubsystem = GEditor->GetEditorSubsystem<UMcpEditorSubsystem>();
+	if (McpSubsystem)
+	{
+		const UMcpServerSettings* McpSettings = McpSubsystem->GetSettings();
+		if (McpSettings)
+		{
+			ServerInfo->SetNumberField(TEXT("port"), McpSettings->ServerPort);
+			ServerInfo->SetStringField(TEXT("bind_address"), McpSettings->BindAddress);
+		}
+		ServerInfo->SetBoolField(TEXT("running"), McpSubsystem->IsServerRunning());
+		if (McpSubsystem->IsServerRunning())
+		{
+			ServerInfo->SetNumberField(TEXT("actual_port"), McpSubsystem->GetActualPort());
+		}
+	}
+	Result->SetObjectField(TEXT("mcp_server"), ServerInfo);
 
 	// Add settings sections if requested
 	if (!Section.IsEmpty())

@@ -72,6 +72,25 @@ git branch -D release-temp
 - **MCP Endpoint:** `http://127.0.0.1:8081/mcp`
 - **Status:** Active test environment for UE 5.6
 
+### Deploying to Test Projects
+
+Use `copy_plugin.ps1` to safely copy the plugin to test projects:
+
+```powershell
+# Copy to both projects (default)
+.\copy_plugin.ps1
+
+# Copy to Elpis only
+.\copy_plugin.ps1 -Target Elpis
+
+# Copy to GameAnimationSample56 only
+.\copy_plugin.ps1 -Target GameAnim
+```
+
+**Excludes:** `.git`, `.claude`, `Tests`, `.pytest_cache`, `.github`, `Docs`, test files
+
+**Config Override:** Target projects can override settings (e.g., `ServerPort`) via their own `Config/DefaultYesUeMcp.ini`
+
 ## Module Structure
 
 - **YesUeMcp** (Runtime) - Core MCP protocol layer

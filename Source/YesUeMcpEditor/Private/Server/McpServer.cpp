@@ -165,12 +165,30 @@ bool FMcpServer::HandleMcpRequest(const FHttpServerRequest& Request, const FHttp
 		return true;
 	}
 
-	// Handle GET (health check / info endpoint)
+	// Handle GET (SSE stream or health check)
 	if (Request.Verb == EHttpServerRequestVerbs::VERB_GET)
 	{
+		// Check if client expects SSE stream
+		const TArray<FString>* AcceptHeaders = Request.Headers.Find(TEXT("Accept"));
+		bool bExpectsSSE = AcceptHeaders && AcceptHeaders->ContainsByPredicate([](const FString& Value) {
+			return Value.Contains(TEXT("text/event-stream"));
+		});
+
+		if (bExpectsSSE)
+		{
+			// SSE not supported - return 405 per MCP spec
+			UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP GET request - SSE not supported, returning 405"));
+
+			TUniquePtr<FHttpServerResponse> Response = FHttpServerResponse::Create(TEXT(""), TEXT("text/plain"));
+			Response->Headers.Add(TEXT("Access-Control-Allow-Origin"), {TEXT("*")});
+			Response->Code = EHttpServerResponseCodes::BadMethod;
+			OnComplete(MoveTemp(Response));
+			return true;
+		}
+
+		// Non-SSE GET (browser health check) - return server info
 		UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP GET request - returning health check info"));
 
-		// Return server info for health checks
 		TSharedPtr<FJsonObject> Info = MakeShareable(new FJsonObject);
 		Info->SetStringField(TEXT("name"), ServerInfo.Name);
 		Info->SetStringField(TEXT("version"), ServerInfo.Version);

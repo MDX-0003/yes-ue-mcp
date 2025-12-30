@@ -168,7 +168,14 @@ FString FMcpResponse::ToJsonString() const
 TSharedPtr<FJsonObject> FMcpSchemaProperty::ToJson() const
 {
 	TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
-	JsonObject->SetStringField(TEXT("type"), Type);
+
+	// Only set type if it's not empty and not "any"
+	// In JSON Schema, omitting "type" means any type is valid
+	if (!Type.IsEmpty() && Type != TEXT("any"))
+	{
+		JsonObject->SetStringField(TEXT("type"), Type);
+	}
+
 	JsonObject->SetStringField(TEXT("description"), Description);
 
 	if (Enum.Num() > 0)
