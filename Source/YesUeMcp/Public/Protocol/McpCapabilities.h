@@ -72,7 +72,7 @@ struct YESUEMCP_API FMcpServerInfo
 	FString Name = TEXT("yes-ue-mcp");
 
 	UPROPERTY()
-	FString Version = TEXT("1.0.0");
+	FString Version;
 
 	TSharedPtr<FJsonObject> ToJson() const;
 };

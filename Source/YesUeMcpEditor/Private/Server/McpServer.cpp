@@ -2,6 +2,7 @@
 
 #include "Server/McpServer.h"
 #include "YesUeMcpEditor.h"
+#include "YesUeMcp.h"
 #include "Tools/McpToolRegistry.h"
 #include "HttpServerModule.h"
 #include "HttpPath.h"
@@ -19,7 +20,7 @@ FMcpServer::FMcpServer()
 
 	// Initialize server info
 	ServerInfo.Name = TEXT("yes-ue-mcp");
-	ServerInfo.Version = TEXT("1.0.0");
+	ServerInfo.Version = YESUEMCP_VERSION;
 }
 
 FMcpServer::~FMcpServer()
