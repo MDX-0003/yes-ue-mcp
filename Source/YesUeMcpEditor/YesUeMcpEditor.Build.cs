@@ -35,6 +35,9 @@ public class YesUeMcpEditor : ModuleRules
 			"KismetCompiler",
 			"BlueprintGraph",
 
+			// Animation Blueprint
+			"AnimGraph",
+
 			// Asset Management
 			"AssetTools",
 			"AssetRegistry",

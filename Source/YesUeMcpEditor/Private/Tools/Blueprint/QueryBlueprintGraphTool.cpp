@@ -14,9 +14,21 @@
 #include "Tools/McpToolResult.h"
 #include "YesUeMcpEditor.h"
 
+// Animation Blueprint support
+#include "Animation/AnimBlueprint.h"
+#include "AnimationGraph.h"
+#include "AnimationStateMachineGraph.h"
+#include "AnimationStateGraph.h"
+#include "AnimationTransitionGraph.h"
+#include "AnimGraphNode_StateMachine.h"
+#include "AnimStateNode.h"
+#include "AnimStateTransitionNode.h"
+#include "AnimStateConduitNode.h"
+
 FString UQueryBlueprintGraphTool::GetToolDescription() const
 {
 	return TEXT("Query Blueprint graphs: list all graphs, get specific node by GUID, get callable details, or list callables. "
+		"For AnimBlueprints: also returns anim_graph, state_machine, state, transition, blend_stack graphs. "
 		"Use node_guid for specific node, callable_name for callable graph, list_callables=true for callable summary.");
 }
 
@@ -58,7 +70,7 @@ TMap<FString, FMcpSchemaProperty> UQueryBlueprintGraphTool::GetInputSchema() con
 
 	FMcpSchemaProperty GraphType;
 	GraphType.Type = TEXT("string");
-	GraphType.Description = TEXT("Filter by graph type: 'event', 'function', or 'macro'");
+	GraphType.Description = TEXT("Filter by graph type: 'event', 'function', 'macro', or for AnimBlueprints: 'anim_graph', 'state_machine', 'state', 'transition', 'blend_stack'");
 	GraphType.bRequired = false;
 	Schema.Add(TEXT("graph_type"), GraphType);
 
@@ -98,16 +110,26 @@ FMcpToolResult UQueryBlueprintGraphTool::Execute(
 
 	UE_LOG(LogYesUeMcp, Log, TEXT("query-blueprint-graph: path='%s'"), *AssetPath);
 
-	// Load Blueprint
+	// Load Blueprint (could be AnimBlueprint)
 	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
 	if (!Blueprint)
 	{
 		return FMcpToolResult::Error(FString::Printf(TEXT("Failed to load Blueprint: %s"), *AssetPath));
 	}
 
+	// Check if this is an AnimBlueprint for specialized handling
+	UAnimBlueprint* AnimBP = Cast<UAnimBlueprint>(Blueprint);
+	bool bIsAnimBlueprint = (AnimBP != nullptr);
+
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 	Result->SetStringField(TEXT("blueprint"), AssetPath);
 	Result->SetStringField(TEXT("parent_class"), Blueprint->ParentClass ? Blueprint->ParentClass->GetName() : TEXT("None"));
+	Result->SetBoolField(TEXT("is_anim_blueprint"), bIsAnimBlueprint);
+
+	if (bIsAnimBlueprint && AnimBP->TargetSkeleton)
+	{
+		Result->SetStringField(TEXT("target_skeleton"), AnimBP->TargetSkeleton->GetPathName());
+	}
 
 	// === Mode 1: Get specific node by GUID ===
 	if (!NodeGuidStr.IsEmpty())
@@ -120,6 +142,13 @@ FMcpToolResult UQueryBlueprintGraphTool::Execute(
 
 		FString GraphName, GraphType;
 		UEdGraphNode* Node = FindNodeByGuid(Blueprint, NodeGuid, GraphName, GraphType);
+
+		// If not found and is AnimBlueprint, search in animation graphs
+		if (!Node && bIsAnimBlueprint)
+		{
+			Node = FindNodeInAnimGraphs(AnimBP, NodeGuid, GraphName, GraphType);
+		}
+
 		if (!Node)
 		{
 			return FMcpToolResult::Error(FString::Printf(TEXT("Node not found: %s"), *NodeGuidStr));
@@ -137,6 +166,13 @@ FMcpToolResult UQueryBlueprintGraphTool::Execute(
 	{
 		FString GraphType;
 		UEdGraph* Graph = FindGraphByName(Blueprint, CallableName, GraphType);
+
+		// If not found and is AnimBlueprint, search animation graphs
+		if (!Graph && bIsAnimBlueprint)
+		{
+			Graph = FindAnimGraphByName(AnimBP, CallableName, GraphType);
+		}
+
 		if (!Graph)
 		{
 			return FMcpToolResult::Error(FString::Printf(TEXT("Callable not found: %s"), *CallableName));
@@ -164,6 +200,15 @@ FMcpToolResult UQueryBlueprintGraphTool::Execute(
 		Result->SetNumberField(TEXT("event_count"), EventsArray.Num());
 		Result->SetNumberField(TEXT("function_count"), FunctionsArray.Num());
 		Result->SetNumberField(TEXT("macro_count"), MacrosArray.Num());
+
+		// Add AnimBlueprint-specific callables
+		if (bIsAnimBlueprint)
+		{
+			TArray<TSharedPtr<FJsonValue>> AnimCallablesArray;
+			ExtractAnimCallables(AnimBP, AnimCallablesArray);
+			Result->SetArrayField(TEXT("anim_graphs"), AnimCallablesArray);
+			Result->SetNumberField(TEXT("anim_graph_count"), AnimCallablesArray.Num());
+		}
 
 		return FMcpToolResult::Json(Result);
 	}
@@ -217,6 +262,12 @@ FMcpToolResult UQueryBlueprintGraphTool::Execute(
 				GraphsArray.Add(MakeShareable(new FJsonValueObject(GraphJson)));
 			}
 		}
+	}
+
+	// Animation Blueprint specific graphs
+	if (bIsAnimBlueprint)
+	{
+		ProcessAnimBlueprintGraphs(AnimBP, GraphNameFilter, GraphTypeFilter, bIncludePositions, GraphsArray);
 	}
 
 	Result->SetArrayField(TEXT("graphs"), GraphsArray);
@@ -557,4 +608,378 @@ FString UQueryBlueprintGraphTool::GetPinCategoryString(FName Category) const
 FString UQueryBlueprintGraphTool::GetPinDirectionString(EEdGraphPinDirection Direction) const
 {
 	return Direction == EGPD_Input ? TEXT("input") : TEXT("output");
+}
+
+// === Animation Blueprint support ===
+
+FString UQueryBlueprintGraphTool::GetAnimGraphTypeString(UEdGraph* Graph) const
+{
+	if (!Graph)
+	{
+		return TEXT("unknown");
+	}
+
+	if (Graph->IsA<UAnimationStateMachineGraph>())
+	{
+		return TEXT("state_machine");
+	}
+	if (Graph->IsA<UAnimationStateGraph>())
+	{
+		return TEXT("state");
+	}
+	if (Graph->IsA<UAnimationTransitionGraph>())
+	{
+		return TEXT("transition");
+	}
+
+	// Check class name for AnimationGraph and variants
+	FString ClassName = Graph->GetClass()->GetName();
+	if (ClassName.Contains(TEXT("AnimationBlendStackGraph")))
+	{
+		return TEXT("blend_stack");
+	}
+	if (ClassName.Contains(TEXT("AnimationGraph")))
+	{
+		return TEXT("anim_graph");
+	}
+
+	return TEXT("anim_unknown");
+}
+
+void UQueryBlueprintGraphTool::ProcessAnimBlueprintGraphs(
+	UAnimBlueprint* AnimBP,
+	const FString& GraphNameFilter,
+	const FString& GraphTypeFilter,
+	bool bIncludePositions,
+	TArray<TSharedPtr<FJsonValue>>& OutGraphsArray) const
+{
+	if (!AnimBP)
+	{
+		return;
+	}
+
+	// Use GetAllGraphs to iterate through all animation graphs
+	TArray<UEdGraph*> AllGraphs;
+	AnimBP->GetAllGraphs(AllGraphs);
+
+	for (UEdGraph* Graph : AllGraphs)
+	{
+		if (!Graph)
+		{
+			continue;
+		}
+
+		// Skip standard Blueprint graphs (already processed)
+		if (AnimBP->UbergraphPages.Contains(Graph) ||
+			AnimBP->FunctionGraphs.Contains(Graph) ||
+			AnimBP->MacroGraphs.Contains(Graph))
+		{
+			continue;
+		}
+
+		// Apply name filter
+		if (!GraphNameFilter.IsEmpty() && Graph->GetName() != GraphNameFilter)
+		{
+			continue;
+		}
+
+		FString AnimGraphType = GetAnimGraphTypeString(Graph);
+
+		// Apply type filter - check both animation-specific types and allow empty filter
+		if (!GraphTypeFilter.IsEmpty() &&
+			GraphTypeFilter != AnimGraphType &&
+			GraphTypeFilter != TEXT("anim_graph") &&
+			GraphTypeFilter != TEXT("state_machine") &&
+			GraphTypeFilter != TEXT("state") &&
+			GraphTypeFilter != TEXT("transition") &&
+			GraphTypeFilter != TEXT("blend_stack"))
+		{
+			// If filter is a standard type (event/function/macro), skip anim graphs
+			continue;
+		}
+
+		// If filter is set to a specific anim type, only include matching
+		if (!GraphTypeFilter.IsEmpty() && GraphTypeFilter != AnimGraphType)
+		{
+			continue;
+		}
+
+		// Process the graph
+		TSharedPtr<FJsonObject> GraphJson = GraphToJson(Graph, AnimGraphType, bIncludePositions);
+		if (GraphJson.IsValid())
+		{
+			// Add animation-specific metadata for state machines
+			if (UAnimationStateMachineGraph* StateMachineGraph = Cast<UAnimationStateMachineGraph>(Graph))
+			{
+				ExtractStateMachineHierarchy(StateMachineGraph, GraphJson, bIncludePositions);
+			}
+
+			OutGraphsArray.Add(MakeShareable(new FJsonValueObject(GraphJson)));
+		}
+	}
+}
+
+void UQueryBlueprintGraphTool::ExtractStateMachineHierarchy(
+	UAnimationStateMachineGraph* StateMachineGraph,
+	TSharedPtr<FJsonObject>& OutGraphJson,
+	bool bIncludePositions) const
+{
+	if (!StateMachineGraph)
+	{
+		return;
+	}
+
+	TArray<TSharedPtr<FJsonValue>> StatesArray;
+	TArray<TSharedPtr<FJsonValue>> TransitionsArray;
+	TArray<TSharedPtr<FJsonValue>> ConduitsArray;
+
+	for (UEdGraphNode* Node : StateMachineGraph->Nodes)
+	{
+		if (!Node)
+		{
+			continue;
+		}
+
+		// Extract state nodes
+		if (UAnimStateNode* StateNode = Cast<UAnimStateNode>(Node))
+		{
+			TSharedPtr<FJsonObject> StateJson = AnimStateNodeToJson(StateNode, bIncludePositions);
+			if (StateJson.IsValid())
+			{
+				StatesArray.Add(MakeShareable(new FJsonValueObject(StateJson)));
+			}
+		}
+		// Extract transition nodes
+		else if (UAnimStateTransitionNode* TransitionNode = Cast<UAnimStateTransitionNode>(Node))
+		{
+			TSharedPtr<FJsonObject> TransitionJson = TransitionNodeToJson(TransitionNode, bIncludePositions);
+			if (TransitionJson.IsValid())
+			{
+				TransitionsArray.Add(MakeShareable(new FJsonValueObject(TransitionJson)));
+			}
+		}
+		// Extract conduit nodes
+		else if (UAnimStateConduitNode* ConduitNode = Cast<UAnimStateConduitNode>(Node))
+		{
+			TSharedPtr<FJsonObject> ConduitJson = MakeShareable(new FJsonObject);
+			ConduitJson->SetStringField(TEXT("guid"), ConduitNode->NodeGuid.ToString(EGuidFormats::DigitsWithHyphens));
+			ConduitJson->SetStringField(TEXT("name"), ConduitNode->GetStateName());
+			ConduitJson->SetStringField(TEXT("type"), TEXT("conduit"));
+
+			if (bIncludePositions)
+			{
+				TSharedPtr<FJsonObject> PositionJson = MakeShareable(new FJsonObject);
+				PositionJson->SetNumberField(TEXT("x"), ConduitNode->NodePosX);
+				PositionJson->SetNumberField(TEXT("y"), ConduitNode->NodePosY);
+				ConduitJson->SetObjectField(TEXT("position"), PositionJson);
+			}
+
+			ConduitsArray.Add(MakeShareable(new FJsonValueObject(ConduitJson)));
+		}
+	}
+
+	OutGraphJson->SetArrayField(TEXT("states"), StatesArray);
+	OutGraphJson->SetArrayField(TEXT("transitions"), TransitionsArray);
+	OutGraphJson->SetArrayField(TEXT("conduits"), ConduitsArray);
+	OutGraphJson->SetNumberField(TEXT("state_count"), StatesArray.Num());
+	OutGraphJson->SetNumberField(TEXT("transition_count"), TransitionsArray.Num());
+	OutGraphJson->SetNumberField(TEXT("conduit_count"), ConduitsArray.Num());
+}
+
+TSharedPtr<FJsonObject> UQueryBlueprintGraphTool::AnimStateNodeToJson(UAnimStateNode* StateNode, bool bIncludePositions) const
+{
+	if (!StateNode)
+	{
+		return nullptr;
+	}
+
+	TSharedPtr<FJsonObject> StateJson = MakeShareable(new FJsonObject);
+	StateJson->SetStringField(TEXT("guid"), StateNode->NodeGuid.ToString(EGuidFormats::DigitsWithHyphens));
+	StateJson->SetStringField(TEXT("name"), StateNode->GetStateName());
+	StateJson->SetStringField(TEXT("type"), TEXT("state"));
+
+	if (bIncludePositions)
+	{
+		TSharedPtr<FJsonObject> PositionJson = MakeShareable(new FJsonObject);
+		PositionJson->SetNumberField(TEXT("x"), StateNode->NodePosX);
+		PositionJson->SetNumberField(TEXT("y"), StateNode->NodePosY);
+		StateJson->SetObjectField(TEXT("position"), PositionJson);
+	}
+
+	// Check if this state has a nested graph (UAnimationStateGraph)
+	if (UAnimationStateGraph* StateGraph = Cast<UAnimationStateGraph>(StateNode->BoundGraph))
+	{
+		StateJson->SetBoolField(TEXT("has_graph"), true);
+		StateJson->SetStringField(TEXT("graph_name"), StateGraph->GetName());
+	}
+
+	return StateJson;
+}
+
+TSharedPtr<FJsonObject> UQueryBlueprintGraphTool::TransitionNodeToJson(UAnimStateTransitionNode* TransitionNode, bool bIncludePositions) const
+{
+	if (!TransitionNode)
+	{
+		return nullptr;
+	}
+
+	TSharedPtr<FJsonObject> TransitionJson = MakeShareable(new FJsonObject);
+	TransitionJson->SetStringField(TEXT("guid"), TransitionNode->NodeGuid.ToString(EGuidFormats::DigitsWithHyphens));
+	TransitionJson->SetStringField(TEXT("type"), TEXT("transition"));
+
+	// Get connected states
+	if (UAnimStateNodeBase* PrevState = TransitionNode->GetPreviousState())
+	{
+		TransitionJson->SetStringField(TEXT("from_state"), PrevState->GetStateName());
+	}
+	if (UAnimStateNodeBase* NextState = TransitionNode->GetNextState())
+	{
+		TransitionJson->SetStringField(TEXT("to_state"), NextState->GetStateName());
+	}
+
+	// Check if has transition graph
+	if (UAnimationTransitionGraph* TransitionGraph = Cast<UAnimationTransitionGraph>(TransitionNode->BoundGraph))
+	{
+		TransitionJson->SetBoolField(TEXT("has_graph"), true);
+		TransitionJson->SetStringField(TEXT("graph_name"), TransitionGraph->GetName());
+	}
+
+	if (bIncludePositions)
+	{
+		TSharedPtr<FJsonObject> PositionJson = MakeShareable(new FJsonObject);
+		PositionJson->SetNumberField(TEXT("x"), TransitionNode->NodePosX);
+		PositionJson->SetNumberField(TEXT("y"), TransitionNode->NodePosY);
+		TransitionJson->SetObjectField(TEXT("position"), PositionJson);
+	}
+
+	return TransitionJson;
+}
+
+UEdGraphNode* UQueryBlueprintGraphTool::FindNodeInAnimGraphs(
+	UAnimBlueprint* AnimBP,
+	const FGuid& NodeGuid,
+	FString& OutGraphName,
+	FString& OutGraphType) const
+{
+	if (!AnimBP)
+	{
+		return nullptr;
+	}
+
+	TArray<UEdGraph*> AllGraphs;
+	AnimBP->GetAllGraphs(AllGraphs);
+
+	for (UEdGraph* Graph : AllGraphs)
+	{
+		if (!Graph)
+		{
+			continue;
+		}
+
+		// Skip already searched standard graphs
+		if (AnimBP->UbergraphPages.Contains(Graph) ||
+			AnimBP->FunctionGraphs.Contains(Graph) ||
+			AnimBP->MacroGraphs.Contains(Graph))
+		{
+			continue;
+		}
+
+		for (UEdGraphNode* Node : Graph->Nodes)
+		{
+			if (Node && Node->NodeGuid == NodeGuid)
+			{
+				OutGraphName = Graph->GetName();
+				OutGraphType = GetAnimGraphTypeString(Graph);
+				return Node;
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+UEdGraph* UQueryBlueprintGraphTool::FindAnimGraphByName(
+	UAnimBlueprint* AnimBP,
+	const FString& GraphName,
+	FString& OutGraphType) const
+{
+	if (!AnimBP)
+	{
+		return nullptr;
+	}
+
+	TArray<UEdGraph*> AllGraphs;
+	AnimBP->GetAllGraphs(AllGraphs);
+
+	for (UEdGraph* Graph : AllGraphs)
+	{
+		if (!Graph)
+		{
+			continue;
+		}
+
+		if (Graph->GetName().Equals(GraphName, ESearchCase::IgnoreCase))
+		{
+			OutGraphType = GetAnimGraphTypeString(Graph);
+			return Graph;
+		}
+	}
+
+	return nullptr;
+}
+
+void UQueryBlueprintGraphTool::ExtractAnimCallables(UAnimBlueprint* AnimBP, TArray<TSharedPtr<FJsonValue>>& OutArray) const
+{
+	if (!AnimBP)
+	{
+		return;
+	}
+
+	TArray<UEdGraph*> AllGraphs;
+	AnimBP->GetAllGraphs(AllGraphs);
+
+	for (UEdGraph* Graph : AllGraphs)
+	{
+		if (!Graph)
+		{
+			continue;
+		}
+
+		// Skip standard Blueprint graphs
+		if (AnimBP->UbergraphPages.Contains(Graph) ||
+			AnimBP->FunctionGraphs.Contains(Graph) ||
+			AnimBP->MacroGraphs.Contains(Graph))
+		{
+			continue;
+		}
+
+		FString GraphType = GetAnimGraphTypeString(Graph);
+
+		TSharedPtr<FJsonObject> CallableObj = MakeShareable(new FJsonObject);
+		CallableObj->SetStringField(TEXT("name"), Graph->GetName());
+		CallableObj->SetStringField(TEXT("type"), GraphType);
+
+		// Add state machine specific info
+		if (UAnimationStateMachineGraph* SMGraph = Cast<UAnimationStateMachineGraph>(Graph))
+		{
+			// Count states and transitions
+			int32 StateCount = 0;
+			int32 TransitionCount = 0;
+			for (UEdGraphNode* Node : SMGraph->Nodes)
+			{
+				if (Cast<UAnimStateNode>(Node))
+				{
+					StateCount++;
+				}
+				else if (Cast<UAnimStateTransitionNode>(Node))
+				{
+					TransitionCount++;
+				}
+			}
+			CallableObj->SetNumberField(TEXT("state_count"), StateCount);
+			CallableObj->SetNumberField(TEXT("transition_count"), TransitionCount);
+		}
+
+		OutArray.Add(MakeShareable(new FJsonValueObject(CallableObj)));
+	}
 }

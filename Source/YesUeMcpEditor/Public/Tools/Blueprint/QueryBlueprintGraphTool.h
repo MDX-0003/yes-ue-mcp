@@ -69,4 +69,45 @@ private:
 
 	/** Get pin direction as string */
 	FString GetPinDirectionString(EEdGraphPinDirection Direction) const;
+
+	// === Animation Blueprint support ===
+
+	/** Get animation graph type string from graph class */
+	FString GetAnimGraphTypeString(class UEdGraph* Graph) const;
+
+	/** Process animation-specific graphs from AnimBlueprint */
+	void ProcessAnimBlueprintGraphs(
+		class UAnimBlueprint* AnimBP,
+		const FString& GraphNameFilter,
+		const FString& GraphTypeFilter,
+		bool bIncludePositions,
+		TArray<TSharedPtr<FJsonValue>>& OutGraphsArray) const;
+
+	/** Extract state machine hierarchy (states, transitions, conduits) */
+	void ExtractStateMachineHierarchy(
+		class UAnimationStateMachineGraph* StateMachineGraph,
+		TSharedPtr<FJsonObject>& OutGraphJson,
+		bool bIncludePositions) const;
+
+	/** Convert AnimStateNode to JSON with state-specific data */
+	TSharedPtr<FJsonObject> AnimStateNodeToJson(class UAnimStateNode* StateNode, bool bIncludePositions) const;
+
+	/** Convert transition node to JSON with transition-specific data */
+	TSharedPtr<FJsonObject> TransitionNodeToJson(class UAnimStateTransitionNode* TransitionNode, bool bIncludePositions) const;
+
+	/** Find node by GUID in animation-specific graphs */
+	class UEdGraphNode* FindNodeInAnimGraphs(
+		class UAnimBlueprint* AnimBP,
+		const FGuid& NodeGuid,
+		FString& OutGraphName,
+		FString& OutGraphType) const;
+
+	/** Find animation graph by name */
+	class UEdGraph* FindAnimGraphByName(
+		class UAnimBlueprint* AnimBP,
+		const FString& GraphName,
+		FString& OutGraphType) const;
+
+	/** Extract AnimBlueprint callables (AnimGraph entry points, state machines) */
+	void ExtractAnimCallables(class UAnimBlueprint* AnimBP, TArray<TSharedPtr<FJsonValue>>& OutArray) const;
 };
