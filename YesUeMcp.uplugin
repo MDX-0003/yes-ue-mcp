@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "1.7.2",
+	"VersionName": "1.7.3",
 	"FriendlyName": "Yes UE MCP",
 	"Description": "Native C++ Model Context Protocol (MCP) server for Unreal Engine 5.6+. Enables AI assistants to interact with UE Editor via HTTP.",
 	"Category": "Editor",

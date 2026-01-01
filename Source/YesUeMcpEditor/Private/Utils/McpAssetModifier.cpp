@@ -9,6 +9,9 @@
 #include "Misc/ScopedSlowTask.h"
 #include "ScopedTransaction.h"
 #include "JsonObjectConverter.h"
+#include "EdGraph/EdGraph.h"
+#include "EdGraph/EdGraphNode.h"
+#include "Animation/AnimBlueprint.h"
 
 TSharedPtr<FScopedTransaction> FMcpAssetModifier::BeginTransaction(const FText& Description)
 {
@@ -493,4 +496,111 @@ bool FMcpAssetModifier::SetPropertyFromJson(
 
 	OutError = FString::Printf(TEXT("Unsupported property type: %s"), *Property->GetClass()->GetName());
 	return false;
+}
+
+UEdGraph* FMcpAssetModifier::FindGraphByName(UBlueprint* Blueprint, const FString& GraphName)
+{
+	if (!Blueprint)
+	{
+		return nullptr;
+	}
+
+	// Check standard graphs first
+	for (UEdGraph* Graph : Blueprint->UbergraphPages)
+	{
+		if (Graph && Graph->GetName().Equals(GraphName, ESearchCase::IgnoreCase))
+		{
+			return Graph;
+		}
+	}
+
+	for (UEdGraph* Graph : Blueprint->FunctionGraphs)
+	{
+		if (Graph && Graph->GetName().Equals(GraphName, ESearchCase::IgnoreCase))
+		{
+			return Graph;
+		}
+	}
+
+	// Check AnimBlueprint-specific graphs
+	if (UAnimBlueprint* AnimBP = Cast<UAnimBlueprint>(Blueprint))
+	{
+		TArray<UEdGraph*> AllGraphs;
+		AnimBP->GetAllGraphs(AllGraphs);
+
+		for (UEdGraph* Graph : AllGraphs)
+		{
+			if (!Graph)
+			{
+				continue;
+			}
+			if (Blueprint->UbergraphPages.Contains(Graph) || Blueprint->FunctionGraphs.Contains(Graph))
+			{
+				continue; // Already checked
+			}
+			if (Graph->GetName().Equals(GraphName, ESearchCase::IgnoreCase))
+			{
+				return Graph;
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+UEdGraphNode* FMcpAssetModifier::FindNodeByGuid(UBlueprint* Blueprint, const FGuid& NodeGuid, UEdGraph** OutGraph)
+{
+	if (!Blueprint)
+	{
+		return nullptr;
+	}
+
+	TArray<UEdGraph*> AllGraphs;
+	GetAllSearchableGraphs(Blueprint, AllGraphs);
+
+	for (UEdGraph* Graph : AllGraphs)
+	{
+		if (!Graph)
+		{
+			continue;
+		}
+		for (UEdGraphNode* Node : Graph->Nodes)
+		{
+			if (Node && Node->NodeGuid == NodeGuid)
+			{
+				if (OutGraph)
+				{
+					*OutGraph = Graph;
+				}
+				return Node;
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+void FMcpAssetModifier::GetAllSearchableGraphs(UBlueprint* Blueprint, TArray<UEdGraph*>& OutGraphs)
+{
+	if (!Blueprint)
+	{
+		return;
+	}
+
+	OutGraphs.Append(Blueprint->UbergraphPages);
+	OutGraphs.Append(Blueprint->FunctionGraphs);
+
+	if (UAnimBlueprint* AnimBP = Cast<UAnimBlueprint>(Blueprint))
+	{
+		TArray<UEdGraph*> AnimGraphs;
+		AnimBP->GetAllGraphs(AnimGraphs);
+
+		for (UEdGraph* Graph : AnimGraphs)
+		{
+			if (Graph && !OutGraphs.Contains(Graph))
+			{
+				OutGraphs.Add(Graph);
+			}
+		}
+	}
 }

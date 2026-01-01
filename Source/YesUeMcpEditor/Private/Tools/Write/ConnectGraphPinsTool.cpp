@@ -14,7 +14,7 @@
 
 FString UConnectGraphPinsTool::GetToolDescription() const
 {
-	return TEXT("Connect two pins in a Blueprint or Material graph.");
+	return TEXT("Connect two pins in a Blueprint or Material graph. For AnimBlueprints, also supports blend_stack, state_machine, and other animation graphs.");
 }
 
 TMap<FString, FMcpSchemaProperty> UConnectGraphPinsTool::GetInputSchema() const
@@ -105,37 +105,9 @@ FMcpToolResult UConnectGraphPinsTool::Execute(
 			return FMcpToolResult::Error(TEXT("Invalid node GUID format"));
 		}
 
-		// Find nodes
-		UEdGraphNode* SourceGraphNode = nullptr;
-		UEdGraphNode* TargetGraphNode = nullptr;
-
-		auto FindNodeInGraphs = [&](const FGuid& Guid) -> UEdGraphNode*
-		{
-			for (UEdGraph* Graph : Blueprint->UbergraphPages)
-			{
-				for (UEdGraphNode* Node : Graph->Nodes)
-				{
-					if (Node && Node->NodeGuid == Guid)
-					{
-						return Node;
-					}
-				}
-			}
-			for (UEdGraph* Graph : Blueprint->FunctionGraphs)
-			{
-				for (UEdGraphNode* Node : Graph->Nodes)
-				{
-					if (Node && Node->NodeGuid == Guid)
-					{
-						return Node;
-					}
-				}
-			}
-			return nullptr;
-		};
-
-		SourceGraphNode = FindNodeInGraphs(SourceGuid);
-		TargetGraphNode = FindNodeInGraphs(TargetGuid);
+		// Find nodes using shared helper (supports AnimBlueprint graphs)
+		UEdGraphNode* SourceGraphNode = FMcpAssetModifier::FindNodeByGuid(Blueprint, SourceGuid);
+		UEdGraphNode* TargetGraphNode = FMcpAssetModifier::FindNodeByGuid(Blueprint, TargetGuid);
 
 		if (!SourceGraphNode)
 		{

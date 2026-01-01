@@ -13,7 +13,7 @@
 
 FString URemoveGraphNodeTool::GetToolDescription() const
 {
-	return TEXT("Remove a node from a Blueprint or Material graph.");
+	return TEXT("Remove a node from a Blueprint or Material graph. For AnimBlueprints, also supports blend_stack, state_machine, and other animation graphs.");
 }
 
 TMap<FString, FMcpSchemaProperty> URemoveGraphNodeTool::GetInputSchema() const
@@ -81,40 +81,9 @@ FMcpToolResult URemoveGraphNodeTool::Execute(
 			return FMcpToolResult::Error(TEXT("Invalid node GUID format"));
 		}
 
-		// Find and remove the node
-		UEdGraphNode* FoundNode = nullptr;
+		// Find and remove the node using shared helper (supports AnimBlueprint graphs)
 		UEdGraph* FoundGraph = nullptr;
-
-		for (UEdGraph* Graph : Blueprint->UbergraphPages)
-		{
-			for (UEdGraphNode* Node : Graph->Nodes)
-			{
-				if (Node && Node->NodeGuid == NodeGuid)
-				{
-					FoundNode = Node;
-					FoundGraph = Graph;
-					break;
-				}
-			}
-			if (FoundNode) break;
-		}
-
-		if (!FoundNode)
-		{
-			for (UEdGraph* Graph : Blueprint->FunctionGraphs)
-			{
-				for (UEdGraphNode* Node : Graph->Nodes)
-				{
-					if (Node && Node->NodeGuid == NodeGuid)
-					{
-						FoundNode = Node;
-						FoundGraph = Graph;
-						break;
-					}
-				}
-				if (FoundNode) break;
-			}
-		}
+		UEdGraphNode* FoundNode = FMcpAssetModifier::FindNodeByGuid(Blueprint, NodeGuid, &FoundGraph);
 
 		if (!FoundNode || !FoundGraph)
 		{

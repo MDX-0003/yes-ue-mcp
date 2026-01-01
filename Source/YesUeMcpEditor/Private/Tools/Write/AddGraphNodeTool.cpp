@@ -24,6 +24,7 @@
 FString UAddGraphNodeTool::GetToolDescription() const
 {
 	return TEXT("Add a node to a Blueprint or Material graph. For Blueprints, supports function calls and events. "
+		"For AnimBlueprints, also supports blend_stack, state_machine, and other animation graphs. "
 		"For Materials, supports expression nodes like Constant, ScalarParameter, Add, Multiply, etc.");
 }
 
@@ -206,29 +207,8 @@ FMcpToolResult UAddGraphNodeTool::Execute(
 	{
 		FMcpAssetModifier::MarkModified(Blueprint);
 
-		// Find the target graph
-		UEdGraph* TargetGraph = nullptr;
-		for (UEdGraph* Graph : Blueprint->UbergraphPages)
-		{
-			if (Graph->GetName().Equals(GraphName, ESearchCase::IgnoreCase))
-			{
-				TargetGraph = Graph;
-				break;
-			}
-		}
-
-		if (!TargetGraph)
-		{
-			// Try function graphs
-			for (UEdGraph* Graph : Blueprint->FunctionGraphs)
-			{
-				if (Graph->GetName().Equals(GraphName, ESearchCase::IgnoreCase))
-				{
-					TargetGraph = Graph;
-					break;
-				}
-			}
-		}
+		// Find the target graph using shared helper (supports AnimBlueprint graphs)
+		UEdGraph* TargetGraph = FMcpAssetModifier::FindGraphByName(Blueprint, GraphName);
 
 		if (!TargetGraph)
 		{

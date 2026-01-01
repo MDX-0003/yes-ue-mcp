@@ -103,6 +103,30 @@ public:
 	 */
 	static void RefreshBlueprintNodes(UBlueprint* Blueprint);
 
+	/**
+	 * Find a graph by name in a Blueprint, including AnimBlueprint-specific graphs.
+	 * @param Blueprint - Blueprint to search
+	 * @param GraphName - Name of the graph to find
+	 * @return Found graph or nullptr
+	 */
+	static UEdGraph* FindGraphByName(UBlueprint* Blueprint, const FString& GraphName);
+
+	/**
+	 * Find a node by GUID in a Blueprint, searching all graphs including AnimBlueprint graphs.
+	 * @param Blueprint - Blueprint to search
+	 * @param NodeGuid - GUID of the node to find
+	 * @param OutGraph - Optional output for the graph containing the node
+	 * @return Found node or nullptr
+	 */
+	static UEdGraphNode* FindNodeByGuid(UBlueprint* Blueprint, const FGuid& NodeGuid, UEdGraph** OutGraph = nullptr);
+
+	/**
+	 * Get all searchable graphs from a Blueprint, including AnimBlueprint-specific graphs.
+	 * @param Blueprint - Blueprint to get graphs from
+	 * @param OutGraphs - Output array of all graphs
+	 */
+	static void GetAllSearchableGraphs(UBlueprint* Blueprint, TArray<UEdGraph*>& OutGraphs);
+
 	// ========== Validation ==========
 
 	/**

@@ -14,7 +14,7 @@
 
 FString UDisconnectGraphPinTool::GetToolDescription() const
 {
-	return TEXT("Break all connections from a pin in a Blueprint or Material graph.");
+	return TEXT("Break all connections from a pin in a Blueprint or Material graph. For AnimBlueprints, also supports blend_stack, state_machine, and other animation graphs.");
 }
 
 TMap<FString, FMcpSchemaProperty> UDisconnectGraphPinTool::GetInputSchema() const
@@ -90,35 +90,8 @@ FMcpToolResult UDisconnectGraphPinTool::Execute(
 			return FMcpToolResult::Error(TEXT("Invalid node GUID format"));
 		}
 
-		// Find the node
-		UEdGraphNode* FoundNode = nullptr;
-
-		auto FindNodeInGraphs = [&](const FGuid& Guid) -> UEdGraphNode*
-		{
-			for (UEdGraph* Graph : Blueprint->UbergraphPages)
-			{
-				for (UEdGraphNode* Node : Graph->Nodes)
-				{
-					if (Node && Node->NodeGuid == Guid)
-					{
-						return Node;
-					}
-				}
-			}
-			for (UEdGraph* Graph : Blueprint->FunctionGraphs)
-			{
-				for (UEdGraphNode* Node : Graph->Nodes)
-				{
-					if (Node && Node->NodeGuid == Guid)
-					{
-						return Node;
-					}
-				}
-			}
-			return nullptr;
-		};
-
-		FoundNode = FindNodeInGraphs(NodeGuid);
+		// Find the node using shared helper (supports AnimBlueprint graphs)
+		UEdGraphNode* FoundNode = FMcpAssetModifier::FindNodeByGuid(Blueprint, NodeGuid);
 
 		if (!FoundNode)
 		{
