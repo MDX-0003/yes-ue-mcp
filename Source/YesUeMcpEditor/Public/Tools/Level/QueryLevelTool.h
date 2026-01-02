@@ -45,8 +45,8 @@ private:
 
 	// === Detail mode (single actor) ===
 
-	/** Find actor by name in the current level */
-	class AActor* FindActorByName(const FString& ActorName) const;
+	/** Find actor by name in the specified world */
+	class AActor* FindActorByName(const FString& ActorName, class UWorld* World) const;
 
 	/** Convert actor to detailed JSON with properties */
 	TSharedPtr<FJsonObject> ActorToDetailedJson(class AActor* Actor, bool bIncludeProperties, bool bIncludeComponents) const;

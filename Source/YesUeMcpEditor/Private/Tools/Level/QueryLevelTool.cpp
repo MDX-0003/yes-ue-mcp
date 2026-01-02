@@ -9,6 +9,7 @@
 #include "Components/SceneComponent.h"
 #include "Tools/McpToolResult.h"
 #include "YesUeMcpEditor.h"
+#include "EngineUtils.h" // For TActorIterator
 
 FString UQueryLevelTool::GetToolDescription() const
 {
@@ -24,7 +25,7 @@ TMap<FString, FMcpSchemaProperty> UQueryLevelTool::GetInputSchema() const
 	// Detail mode parameter
 	FMcpSchemaProperty ActorName;
 	ActorName.Type = TEXT("string");
-	ActorName.Description = TEXT("Get detailed info for a specific actor by name. When specified, other filters are ignored.");
+	ActorName.Description = TEXT("Get detailed info for a specific actor by name or label (wildcards supported, e.g., '*Demon*'). Returns first match.");
 	ActorName.bRequired = false;
 	Schema.Add(TEXT("actor_name"), ActorName);
 
@@ -56,7 +57,7 @@ TMap<FString, FMcpSchemaProperty> UQueryLevelTool::GetInputSchema() const
 	// Shared parameters
 	FMcpSchemaProperty IncludeComponents;
 	IncludeComponents.Type = TEXT("boolean");
-	IncludeComponents.Description = TEXT("Include component list for each actor (default: false for list mode, true for detail mode)");
+	IncludeComponents.Description = TEXT("Include component list for each actor (default: false)");
 	IncludeComponents.bRequired = false;
 	Schema.Add(TEXT("include_components"), IncludeComponents);
 
@@ -69,7 +70,7 @@ TMap<FString, FMcpSchemaProperty> UQueryLevelTool::GetInputSchema() const
 	// Detail mode parameters
 	FMcpSchemaProperty IncludeProperties;
 	IncludeProperties.Type = TEXT("boolean");
-	IncludeProperties.Description = TEXT("Include actor properties via reflection (default: true in detail mode)");
+	IncludeProperties.Description = TEXT("Include actor properties via reflection (default: false)");
 	IncludeProperties.bRequired = false;
 	Schema.Add(TEXT("include_properties"), IncludeProperties);
 
@@ -79,6 +80,13 @@ TMap<FString, FMcpSchemaProperty> UQueryLevelTool::GetInputSchema() const
 	Limit.Description = TEXT("Maximum number of results to return (default: 100)");
 	Limit.bRequired = false;
 	Schema.Add(TEXT("limit"), Limit);
+
+	// World selection parameter
+	FMcpSchemaProperty WorldType;
+	WorldType.Type = TEXT("string");
+	WorldType.Description = TEXT("Which world to query: 'auto' (PIE if running, else editor), 'pie' (PIE only), 'editor' (editor only). Default: 'auto'");
+	WorldType.bRequired = false;
+	Schema.Add(TEXT("world_type"), WorldType);
 
 	return Schema;
 }
@@ -92,42 +100,141 @@ FMcpToolResult UQueryLevelTool::Execute(
 	const TSharedPtr<FJsonObject>& Arguments,
 	const FMcpToolContext& Context)
 {
-	// Get editor world
 	if (!GEditor)
 	{
 		return FMcpToolResult::Error(TEXT("Editor not available"));
 	}
 
-	UWorld* World = GEditor->GetEditorWorldContext().World();
-	if (!World)
+	// Get world_type parameter: 'auto' (default), 'pie', or 'editor'
+	FString WorldTypeParam = GetStringArgOrDefault(Arguments, TEXT("world_type"), TEXT("auto")).ToLower();
+
+	UWorld* World = nullptr;
+
+	if (WorldTypeParam == TEXT("pie"))
 	{
-		return FMcpToolResult::Error(TEXT("No world loaded in editor"));
+		// PIE only - fail if not running
+		for (const FWorldContext& WorldContext : GEngine->GetWorldContexts())
+		{
+			if (WorldContext.WorldType == EWorldType::PIE && WorldContext.World())
+			{
+				World = WorldContext.World();
+				break;
+			}
+		}
+		if (!World)
+		{
+			return FMcpToolResult::Error(TEXT("PIE world requested but Play In Editor is not running"));
+		}
+	}
+	else if (WorldTypeParam == TEXT("editor"))
+	{
+		// Editor only
+		World = GEditor->GetEditorWorldContext().World();
+		if (!World)
+		{
+			return FMcpToolResult::Error(TEXT("Editor world not available"));
+		}
+	}
+	else
+	{
+		// Auto mode (default): prefer PIE if available, else editor
+		for (const FWorldContext& WorldContext : GEngine->GetWorldContexts())
+		{
+			if (WorldContext.WorldType == EWorldType::PIE && WorldContext.World())
+			{
+				World = WorldContext.World();
+				break;
+			}
+		}
+		if (!World)
+		{
+			World = GEditor->GetEditorWorldContext().World();
+		}
+		if (!World)
+		{
+			return FMcpToolResult::Error(TEXT("No world loaded"));
+		}
 	}
 
-	ULevel* Level = World->PersistentLevel;
-	if (!Level)
+	// Get all loaded levels (persistent + streaming sublevels)
+	const TArray<ULevel*>& AllLevels = World->GetLevels();
+	if (AllLevels.Num() == 0)
 	{
-		return FMcpToolResult::Error(TEXT("No persistent level found"));
+		return FMcpToolResult::Error(TEXT("No levels found in world"));
+	}
+
+	// Verbose logging for debugging
+	UE_LOG(LogYesUeMcp, Log, TEXT("query-level: World='%s', WorldType=%d, NumLevels=%d"),
+		*World->GetName(),
+		(int32)World->WorldType,
+		AllLevels.Num());
+
+	// Count actors using TActorIterator (includes runtime-spawned actors)
+	int32 TotalActorCount = 0;
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		TotalActorCount++;
+	}
+	UE_LOG(LogYesUeMcp, Log, TEXT("query-level: TActorIterator found %d total actors (including runtime-spawned)"), TotalActorCount);
+
+	for (int32 i = 0; i < AllLevels.Num(); i++)
+	{
+		ULevel* Level = AllLevels[i];
+		if (Level)
+		{
+			FString LevelName = Level->GetOuter() ? Level->GetOuter()->GetName() : TEXT("Unknown");
+			UE_LOG(LogYesUeMcp, Log, TEXT("  Level[%d]: '%s', LevelActorCount=%d, bIsVisible=%d"),
+				i, *LevelName, Level->Actors.Num(), Level->bIsVisible);
+		}
 	}
 
 	// Check for detail mode (specific actor)
 	FString ActorName = GetStringArgOrDefault(Arguments, TEXT("actor_name"), TEXT(""));
 	if (!ActorName.IsEmpty())
 	{
-		// Detail mode - return detailed info for specific actor
+		// Detail mode - return info for specific actor
 		UE_LOG(LogYesUeMcp, Log, TEXT("query-level: detail mode for actor='%s'"), *ActorName);
 
-		AActor* Actor = FindActorByName(ActorName);
+		AActor* Actor = FindActorByName(ActorName, World);
 		if (!Actor)
 		{
 			return FMcpToolResult::Error(FString::Printf(
-				TEXT("Actor '%s' not found in current level"), *ActorName));
+				TEXT("Actor '%s' not found in current world"), *ActorName));
 		}
 
-		bool bIncludeProperties = GetBoolArgOrDefault(Arguments, TEXT("include_properties"), true);
-		bool bIncludeComponents = GetBoolArgOrDefault(Arguments, TEXT("include_components"), true);
+		// Default to basic info (false), user can request detailed properties/components
+		bool bIncludeProperties = GetBoolArgOrDefault(Arguments, TEXT("include_properties"), false);
+		bool bIncludeComponents = GetBoolArgOrDefault(Arguments, TEXT("include_components"), false);
+		bool bIncludeTransform = GetBoolArgOrDefault(Arguments, TEXT("include_transform"), true);
 
-		TSharedPtr<FJsonObject> Result = ActorToDetailedJson(Actor, bIncludeProperties, bIncludeComponents);
+		TSharedPtr<FJsonObject> Result = ActorToJson(Actor, bIncludeComponents, bIncludeTransform);
+
+		// Add level and world type info
+		if (ULevel* ActorLevel = Actor->GetLevel())
+		{
+			if (UObject* LevelOuter = ActorLevel->GetOuter())
+			{
+				Result->SetStringField(TEXT("level"), LevelOuter->GetName());
+			}
+		}
+
+		FString WorldTypeStr;
+		switch (World->WorldType)
+		{
+		case EWorldType::PIE: WorldTypeStr = TEXT("pie"); break;
+		case EWorldType::Editor: WorldTypeStr = TEXT("editor"); break;
+		case EWorldType::Game: WorldTypeStr = TEXT("game"); break;
+		default: WorldTypeStr = TEXT("unknown"); break;
+		}
+		Result->SetStringField(TEXT("world_type"), WorldTypeStr);
+
+		// If properties requested, add them
+		if (bIncludeProperties)
+		{
+			TSharedPtr<FJsonObject> DetailedResult = ActorToDetailedJson(Actor, true, bIncludeComponents);
+			return FMcpToolResult::Json(DetailedResult);
+		}
+
 		return FMcpToolResult::Json(Result);
 	}
 
@@ -145,15 +252,38 @@ FMcpToolResult UQueryLevelTool::Execute(
 
 	// Build result
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-	Result->SetStringField(TEXT("level_name"), Level->GetName());
 	Result->SetStringField(TEXT("world_name"), World->GetName());
 
-	// Iterate actors
+	// Add world type info
+	FString WorldTypeStr;
+	switch (World->WorldType)
+	{
+	case EWorldType::PIE: WorldTypeStr = TEXT("pie"); break;
+	case EWorldType::Editor: WorldTypeStr = TEXT("editor"); break;
+	case EWorldType::Game: WorldTypeStr = TEXT("game"); break;
+	default: WorldTypeStr = TEXT("unknown"); break;
+	}
+	Result->SetStringField(TEXT("world_type"), WorldTypeStr);
+
+	// Add list of all loaded levels
+	TArray<TSharedPtr<FJsonValue>> LevelsArray;
+	for (ULevel* Level : AllLevels)
+	{
+		if (Level && Level->GetOuter())
+		{
+			LevelsArray.Add(MakeShareable(new FJsonValueString(Level->GetOuter()->GetName())));
+		}
+	}
+	Result->SetArrayField(TEXT("levels"), LevelsArray);
+
+	// Iterate ALL actors using TActorIterator (includes runtime-spawned actors)
 	TArray<TSharedPtr<FJsonValue>> ActorsArray;
 	int32 ProcessedCount = 0;
+	bool bLimitReached = false;
 
-	for (AActor* Actor : Level->Actors)
+	for (TActorIterator<AActor> It(World); It; ++It)
 	{
+		AActor* Actor = *It;
 		if (!Actor)
 		{
 			continue;
@@ -162,6 +292,7 @@ FMcpToolResult UQueryLevelTool::Execute(
 		// Check limit
 		if (ActorsArray.Num() >= Limit)
 		{
+			bLimitReached = true;
 			break;
 		}
 
@@ -195,14 +326,22 @@ FMcpToolResult UQueryLevelTool::Execute(
 		TSharedPtr<FJsonObject> ActorJson = ActorToJson(Actor, bIncludeComponents, bIncludeTransform);
 		if (ActorJson.IsValid())
 		{
+			// Add level info from actor's owning level
+			if (ULevel* ActorLevel = Actor->GetLevel())
+			{
+				if (UObject* LevelOuter = ActorLevel->GetOuter())
+				{
+					ActorJson->SetStringField(TEXT("level"), LevelOuter->GetName());
+				}
+			}
 			ActorsArray.Add(MakeShareable(new FJsonValueObject(ActorJson)));
 		}
 	}
 
 	Result->SetArrayField(TEXT("actors"), ActorsArray);
 	Result->SetNumberField(TEXT("actor_count"), ActorsArray.Num());
-	Result->SetNumberField(TEXT("total_actors_in_level"), ProcessedCount);
-	Result->SetBoolField(TEXT("limit_reached"), ActorsArray.Num() >= Limit);
+	Result->SetNumberField(TEXT("total_actors_processed"), ProcessedCount);
+	Result->SetBoolField(TEXT("limit_reached"), bLimitReached);
 
 	return FMcpToolResult::Json(Result);
 }
@@ -362,40 +501,48 @@ bool UQueryLevelTool::MatchesWildcard(const FString& Name, const FString& Patter
 
 // === Detail mode helpers ===
 
-AActor* UQueryLevelTool::FindActorByName(const FString& ActorName) const
+AActor* UQueryLevelTool::FindActorByName(const FString& ActorName, UWorld* World) const
 {
-	if (!GEditor)
-	{
-		return nullptr;
-	}
-
-	UWorld* World = GEditor->GetEditorWorldContext().World();
 	if (!World)
 	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("FindActorByName: World is null"));
 		return nullptr;
 	}
 
-	ULevel* Level = World->PersistentLevel;
-	if (!Level)
-	{
-		return nullptr;
-	}
+	// Use TActorIterator to search ALL actors (including runtime-spawned)
+	UE_LOG(LogYesUeMcp, Log, TEXT("FindActorByName: Searching for '%s' using TActorIterator"), *ActorName);
 
-	// Search for actor by name or label
-	for (AActor* Actor : Level->Actors)
+	int32 TotalActorsSearched = 0;
+	for (TActorIterator<AActor> It(World); It; ++It)
 	{
+		AActor* Actor = *It;
 		if (!Actor)
 		{
 			continue;
 		}
 
-		if (Actor->GetName().Equals(ActorName, ESearchCase::IgnoreCase) ||
-			Actor->GetActorLabel().Equals(ActorName, ESearchCase::IgnoreCase))
+		TotalActorsSearched++;
+
+		// Support wildcards (*) or exact match
+		if (MatchesWildcard(Actor->GetName(), ActorName) ||
+			MatchesWildcard(Actor->GetActorLabel(), ActorName))
 		{
+			FString LevelName = TEXT("Unknown");
+			if (ULevel* ActorLevel = Actor->GetLevel())
+			{
+				if (UObject* LevelOuter = ActorLevel->GetOuter())
+				{
+					LevelName = LevelOuter->GetName();
+				}
+			}
+			UE_LOG(LogYesUeMcp, Log, TEXT("FindActorByName: FOUND '%s' (label='%s') in level '%s'"),
+				*Actor->GetName(), *Actor->GetActorLabel(), *LevelName);
 			return Actor;
 		}
 	}
 
+	UE_LOG(LogYesUeMcp, Warning, TEXT("FindActorByName: NOT FOUND '%s' after searching %d actors"),
+		*ActorName, TotalActorsSearched);
 	return nullptr;
 }
 
@@ -412,6 +559,15 @@ TSharedPtr<FJsonObject> UQueryLevelTool::ActorToDetailedJson(AActor* Actor, bool
 	ActorJson->SetStringField(TEXT("name"), Actor->GetName());
 	ActorJson->SetStringField(TEXT("label"), Actor->GetActorLabel());
 	ActorJson->SetStringField(TEXT("class"), Actor->GetClass()->GetName());
+
+	// Level info (which level contains this actor)
+	if (ULevel* ActorLevel = Actor->GetLevel())
+	{
+		if (UObject* LevelOuter = ActorLevel->GetOuter())
+		{
+			ActorJson->SetStringField(TEXT("level"), LevelOuter->GetName());
+		}
+	}
 
 	// Parent class hierarchy
 	TArray<TSharedPtr<FJsonValue>> ParentClassesArray;
