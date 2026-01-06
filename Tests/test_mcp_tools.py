@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """
-MCP Tools Integration Tests (v1.6.0 - Post Consolidation)
+MCP Tools Integration Tests (v1.8.0 - StateTree Support)
 
 This script tests the yes-ue-mcp plugin tools using Python's unittest framework.
-Updated for the consolidated tool architecture (10 read tools + 18 write tools).
+Updated for the consolidated tool architecture (11 read tools + 22 write tools).
+
+StateTree Tools Added:
+    - query-statetree: Query StateTree structure (states, transitions, tasks, evaluators, parameters)
+    - add-statetree-state: Add a new state to a StateTree
+    - remove-statetree-state: Remove a state from a StateTree
+    - add-statetree-task: Add a task to a state
+    - add-statetree-transition: Add a transition between states
 
 Consolidated Read Tools:
     - query-blueprint: Merged from analyze-blueprint, get-blueprint-functions,
@@ -151,17 +158,18 @@ class TestConnection(McpTestCase):
         """Test that expected minimum number of tools are available."""
         tools = self.client.list_tools()
         tool_names = [t["name"] for t in tools]
-        # After aggressive consolidation: 10 read + 18 write = 28 tools
-        # Note: Some tools may be missing depending on build config
-        self.assertGreaterEqual(len(tool_names), 27,
-            f"Expected at least 27 tools, got {len(tool_names)}")
+        # After StateTree addition: 11 read + 22 write = 33 tools
+        # Read: 10 original + 1 query-statetree = 11
+        # Write: 18 original + 4 StateTree write tools = 22
+        self.assertGreaterEqual(len(tool_names), 33,
+            f"Expected at least 33 tools, got {len(tool_names)}")
 
     def test_required_read_tools_exist(self):
         """Test that essential read tools are registered (after consolidation)."""
         tools = self.client.list_tools()
         tool_names = {t["name"] for t in tools}
 
-        # New consolidated tools (10 read tools total)
+        # New consolidated tools (11 read tools total)
         required_tools = [
             "query-blueprint",        # Merged: analyze-blueprint, get-blueprint-functions, etc.
             "query-blueprint-graph",  # Merged: get-blueprint-graph, get-blueprint-node, etc.
@@ -169,6 +177,7 @@ class TestConnection(McpTestCase):
             "get-project-info",       # Merged with get-project-settings
             "query-asset",            # Merged: search-assets, inspect-asset, inspect-data-asset
             "query-material",         # Merged: get-material-graph, get-material-parameters
+            "query-statetree",        # StateTree query tool
             "get-class-hierarchy",
             "find-references",
             "inspect-widget-blueprint",
@@ -215,6 +224,11 @@ class TestConnection(McpTestCase):
             "create-asset",
             "delete-asset",
             "compile-blueprint",
+            # StateTree write tools
+            "add-statetree-state",
+            "remove-statetree-state",
+            "add-statetree-task",
+            "add-statetree-transition",
         ]
         for tool in required_tools:
             self.assertIn(tool, tool_names, f"Required tool '{tool}' not found")
@@ -1256,6 +1270,621 @@ class TestReferenceTools(McpTestCase):
         })
         # Tool should respond with references (may be empty)
         self.assertIsInstance(result, dict)
+
+
+class TestStateTreeTools(McpTestCase):
+    """Test StateTree query and modification tools."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Find a StateTree to test with."""
+        super().setUpClass()
+
+        # Search for any StateTree
+        result = cls.client.call_tool("query-asset", {
+            "query": "*",
+            "class": "StateTree",
+            "limit": 1
+        })
+        if result.get("assets"):
+            cls.test_statetree_path = result["assets"][0]["path"]
+        else:
+            cls.test_statetree_path = None
+
+    def test_query_statetree_default(self):
+        """Test query-statetree returns all info by default."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        result = self.client.call_tool("query-statetree", {
+            "asset_path": self.test_statetree_path
+        })
+
+        self.assertIn("name", result)
+        self.assertIn("path", result)
+        # Default includes states, transitions, tasks, evaluators, parameters
+        self.assertIn("states", result)
+        self.assertIn("transitions", result)
+        self.assertIn("tasks", result)
+        self.assertIn("evaluators", result)
+        self.assertIn("parameters", result)
+
+    def test_query_statetree_states_only(self):
+        """Test query-statetree with include=states."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        result = self.client.call_tool("query-statetree", {
+            "asset_path": self.test_statetree_path,
+            "include": "states"
+        })
+
+        self.assertIn("states", result)
+        self.assertIn("items", result["states"])
+        self.assertIn("count", result["states"])
+
+    def test_query_statetree_transitions_only(self):
+        """Test query-statetree with include=transitions."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        result = self.client.call_tool("query-statetree", {
+            "asset_path": self.test_statetree_path,
+            "include": "transitions"
+        })
+
+        self.assertIn("transitions", result)
+        self.assertIn("items", result["transitions"])
+        self.assertIn("count", result["transitions"])
+
+    def test_query_statetree_tasks_only(self):
+        """Test query-statetree with include=tasks."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        result = self.client.call_tool("query-statetree", {
+            "asset_path": self.test_statetree_path,
+            "include": "tasks"
+        })
+
+        self.assertIn("tasks", result)
+        self.assertIn("items", result["tasks"])
+        self.assertIn("count", result["tasks"])
+
+    def test_query_statetree_evaluators_only(self):
+        """Test query-statetree with include=evaluators."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        result = self.client.call_tool("query-statetree", {
+            "asset_path": self.test_statetree_path,
+            "include": "evaluators"
+        })
+
+        self.assertIn("evaluators", result)
+        self.assertIn("items", result["evaluators"])
+        self.assertIn("count", result["evaluators"])
+
+    def test_query_statetree_parameters_only(self):
+        """Test query-statetree with include=parameters."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        result = self.client.call_tool("query-statetree", {
+            "asset_path": self.test_statetree_path,
+            "include": "parameters"
+        })
+
+        self.assertIn("parameters", result)
+        self.assertIn("items", result["parameters"])
+        self.assertIn("count", result["parameters"])
+
+    def test_query_statetree_detailed_mode(self):
+        """Test query-statetree with detailed=true."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        result = self.client.call_tool("query-statetree", {
+            "asset_path": self.test_statetree_path,
+            "include": "states",
+            "detailed": True
+        })
+
+        self.assertIn("states", result)
+        states = result["states"].get("items", [])
+        if states:
+            # Detailed mode should include extra fields
+            first_state = states[0]
+            self.assertIn("type", first_state)
+            # Detailed info includes depth, selection_behavior, etc.
+            self.assertIn("selection_behavior", first_state)
+
+    def test_query_statetree_schema(self):
+        """Test query-statetree returns schema info."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        result = self.client.call_tool("query-statetree", {
+            "asset_path": self.test_statetree_path
+        })
+
+        # Schema may or may not be set, but field should exist if schema is set
+        # Just verify we can query without error
+
+    def test_query_statetree_missing_asset_path(self):
+        """Test query-statetree fails without asset_path."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("query-statetree", {})
+        self.assertIn("asset_path", str(ctx.exception).lower())
+
+    def test_query_statetree_nonexistent_asset(self):
+        """Test query-statetree fails for non-existent asset."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("query-statetree", {
+                "asset_path": "/Game/NonExistent/ST_DoesNotExist_12345"
+            })
+        error_msg = str(ctx.exception).lower()
+        self.assertTrue(
+            "not found" in error_msg or "failed to load" in error_msg,
+            f"Expected 'not found' error, got: {ctx.exception}"
+        )
+
+
+class TestStateTreeWriteTools(McpTestCase):
+    """Test StateTree modification tools (add-statetree-state, add-statetree-task, etc.)."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Find or create a StateTree to test with."""
+        super().setUpClass()
+        import time
+
+        # Search for any StateTree to use for testing
+        result = cls.client.call_tool("query-asset", {
+            "query": "*",
+            "class": "StateTree",
+            "limit": 1
+        })
+        if result.get("assets"):
+            cls.test_statetree_path = result["assets"][0]["path"]
+        else:
+            cls.test_statetree_path = None
+
+    # -------------------------------------------------------------------------
+    # add-statetree-state Tests
+    # -------------------------------------------------------------------------
+
+    def test_add_statetree_state_missing_asset_path(self):
+        """Test add-statetree-state fails without asset_path."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("add-statetree-state", {
+                "state_name": "TestState"
+            })
+        self.assertIn("asset_path", str(ctx.exception).lower())
+
+    def test_add_statetree_state_missing_state_name(self):
+        """Test add-statetree-state fails without state_name."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("add-statetree-state", {
+                "asset_path": "/Game/Test/ST_Test"
+            })
+        self.assertIn("state_name", str(ctx.exception).lower())
+
+    def test_add_statetree_state_nonexistent_asset(self):
+        """Test add-statetree-state fails for non-existent StateTree."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("add-statetree-state", {
+                "asset_path": "/Game/NonExistent/ST_DoesNotExist_12345",
+                "state_name": "TestState"
+            })
+        error_msg = str(ctx.exception).lower()
+        self.assertTrue(
+            "not found" in error_msg or "failed to load" in error_msg,
+            f"Expected 'not found' error, got: {ctx.exception}"
+        )
+
+    def test_add_statetree_state_nonexistent_parent(self):
+        """Test add-statetree-state fails when parent_state doesn't exist."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("add-statetree-state", {
+                "asset_path": self.test_statetree_path,
+                "state_name": "TestState",
+                "parent_state": "NonExistentParent_12345"
+            })
+        error_msg = str(ctx.exception).lower()
+        self.assertTrue(
+            "not found" in error_msg or "parent" in error_msg,
+            f"Expected 'parent not found' error, got: {ctx.exception}"
+        )
+
+    def test_add_statetree_state_basic(self):
+        """Test adding a basic state to StateTree."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        # Generate unique state name
+        import time
+        state_name = f"MCP_TestState_{int(time.time())}"
+
+        try:
+            result = self.client.call_tool("add-statetree-state", {
+                "asset_path": self.test_statetree_path,
+                "state_name": state_name
+            })
+
+            self.assertTrue(result.get("success"), "add-statetree-state should succeed")
+            self.assertEqual(result.get("state_name"), state_name)
+            self.assertIn("message", result)
+
+        finally:
+            # Clean up - remove the test state
+            try:
+                self.client.call_tool("remove-statetree-state", {
+                    "asset_path": self.test_statetree_path,
+                    "state_name": state_name
+                })
+            except:
+                pass
+
+    def test_add_statetree_state_with_type(self):
+        """Test adding a state with specific type."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        import time
+        state_name = f"MCP_GroupState_{int(time.time())}"
+
+        try:
+            result = self.client.call_tool("add-statetree-state", {
+                "asset_path": self.test_statetree_path,
+                "state_name": state_name,
+                "state_type": "Group"
+            })
+
+            self.assertTrue(result.get("success"), "add-statetree-state should succeed")
+            self.assertEqual(result.get("state_type"), "Group")
+
+        finally:
+            try:
+                self.client.call_tool("remove-statetree-state", {
+                    "asset_path": self.test_statetree_path,
+                    "state_name": state_name
+                })
+            except:
+                pass
+
+    def test_add_statetree_state_with_selection_behavior(self):
+        """Test adding a state with specific selection behavior."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        import time
+        state_name = f"MCP_SelectState_{int(time.time())}"
+
+        try:
+            result = self.client.call_tool("add-statetree-state", {
+                "asset_path": self.test_statetree_path,
+                "state_name": state_name,
+                "selection_behavior": "TrySelectChildrenInOrder"
+            })
+
+            self.assertTrue(result.get("success"), "add-statetree-state should succeed")
+            self.assertEqual(result.get("selection_behavior"), "TrySelectChildrenInOrder")
+
+        finally:
+            try:
+                self.client.call_tool("remove-statetree-state", {
+                    "asset_path": self.test_statetree_path,
+                    "state_name": state_name
+                })
+            except:
+                pass
+
+    # -------------------------------------------------------------------------
+    # remove-statetree-state Tests
+    # -------------------------------------------------------------------------
+
+    def test_remove_statetree_state_missing_asset_path(self):
+        """Test remove-statetree-state fails without asset_path."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("remove-statetree-state", {
+                "state_name": "TestState"
+            })
+        self.assertIn("asset_path", str(ctx.exception).lower())
+
+    def test_remove_statetree_state_missing_state_name(self):
+        """Test remove-statetree-state fails without state_name."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("remove-statetree-state", {
+                "asset_path": "/Game/Test/ST_Test"
+            })
+        self.assertIn("state_name", str(ctx.exception).lower())
+
+    def test_remove_statetree_state_nonexistent_asset(self):
+        """Test remove-statetree-state fails for non-existent StateTree."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("remove-statetree-state", {
+                "asset_path": "/Game/NonExistent/ST_DoesNotExist_12345",
+                "state_name": "TestState"
+            })
+        error_msg = str(ctx.exception).lower()
+        self.assertTrue(
+            "not found" in error_msg or "failed to load" in error_msg,
+            f"Expected 'not found' error, got: {ctx.exception}"
+        )
+
+    def test_remove_statetree_state_nonexistent_state(self):
+        """Test remove-statetree-state fails when state doesn't exist."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("remove-statetree-state", {
+                "asset_path": self.test_statetree_path,
+                "state_name": "NonExistentState_12345"
+            })
+        error_msg = str(ctx.exception).lower()
+        self.assertTrue(
+            "not found" in error_msg,
+            f"Expected 'not found' error, got: {ctx.exception}"
+        )
+
+    def test_remove_statetree_state_basic(self):
+        """Test removing a state from StateTree."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        import time
+        state_name = f"MCP_RemoveState_{int(time.time())}"
+
+        # First add a state
+        add_result = self.client.call_tool("add-statetree-state", {
+            "asset_path": self.test_statetree_path,
+            "state_name": state_name
+        })
+        if not add_result.get("success"):
+            self.skipTest("Could not add state for remove test")
+
+        # Then remove it
+        remove_result = self.client.call_tool("remove-statetree-state", {
+            "asset_path": self.test_statetree_path,
+            "state_name": state_name
+        })
+
+        self.assertTrue(remove_result.get("success"), "remove-statetree-state should succeed")
+        self.assertEqual(remove_result.get("state_name"), state_name)
+        self.assertIn("children_removed", remove_result)
+
+    # -------------------------------------------------------------------------
+    # add-statetree-task Tests
+    # -------------------------------------------------------------------------
+
+    def test_add_statetree_task_missing_asset_path(self):
+        """Test add-statetree-task fails without asset_path."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("add-statetree-task", {
+                "state_name": "TestState",
+                "task_class": "StateTreeTask_Wait"
+            })
+        self.assertIn("asset_path", str(ctx.exception).lower())
+
+    def test_add_statetree_task_missing_state_name(self):
+        """Test add-statetree-task fails without state_name."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("add-statetree-task", {
+                "asset_path": "/Game/Test/ST_Test",
+                "task_class": "StateTreeTask_Wait"
+            })
+        self.assertIn("state_name", str(ctx.exception).lower())
+
+    def test_add_statetree_task_missing_task_class(self):
+        """Test add-statetree-task fails without task_class."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("add-statetree-task", {
+                "asset_path": "/Game/Test/ST_Test",
+                "state_name": "TestState"
+            })
+        self.assertIn("task_class", str(ctx.exception).lower())
+
+    def test_add_statetree_task_nonexistent_asset(self):
+        """Test add-statetree-task fails for non-existent StateTree."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("add-statetree-task", {
+                "asset_path": "/Game/NonExistent/ST_DoesNotExist_12345",
+                "state_name": "TestState",
+                "task_class": "StateTreeTask_Wait"
+            })
+        error_msg = str(ctx.exception).lower()
+        self.assertTrue(
+            "not found" in error_msg or "failed to load" in error_msg,
+            f"Expected 'not found' error, got: {ctx.exception}"
+        )
+
+    def test_add_statetree_task_nonexistent_state(self):
+        """Test add-statetree-task fails when state doesn't exist."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("add-statetree-task", {
+                "asset_path": self.test_statetree_path,
+                "state_name": "NonExistentState_12345",
+                "task_class": "StateTreeTask_Wait"
+            })
+        error_msg = str(ctx.exception).lower()
+        self.assertTrue(
+            "not found" in error_msg,
+            f"Expected 'not found' error, got: {ctx.exception}"
+        )
+
+    def test_add_statetree_task_invalid_task_class(self):
+        """Test add-statetree-task fails for invalid task class."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        # First get a valid state name
+        query_result = self.client.call_tool("query-statetree", {
+            "asset_path": self.test_statetree_path,
+            "include": "states"
+        })
+        states = query_result.get("states", {}).get("items", [])
+        if not states:
+            self.skipTest("No states in StateTree for testing")
+
+        state_name = states[0].get("name")
+
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("add-statetree-task", {
+                "asset_path": self.test_statetree_path,
+                "state_name": state_name,
+                "task_class": "NonExistentTaskClass_12345"
+            })
+        error_msg = str(ctx.exception).lower()
+        self.assertTrue(
+            "not found" in error_msg or "available" in error_msg,
+            f"Expected 'not found' error, got: {ctx.exception}"
+        )
+
+    # -------------------------------------------------------------------------
+    # add-statetree-transition Tests
+    # -------------------------------------------------------------------------
+
+    def test_add_statetree_transition_missing_asset_path(self):
+        """Test add-statetree-transition fails without asset_path."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("add-statetree-transition", {
+                "source_state": "StateA",
+                "target_state": "StateB"
+            })
+        self.assertIn("asset_path", str(ctx.exception).lower())
+
+    def test_add_statetree_transition_missing_source_state(self):
+        """Test add-statetree-transition fails without source_state."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("add-statetree-transition", {
+                "asset_path": "/Game/Test/ST_Test",
+                "target_state": "StateB"
+            })
+        self.assertIn("source_state", str(ctx.exception).lower())
+
+    def test_add_statetree_transition_missing_target_state(self):
+        """Test add-statetree-transition fails without target_state."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("add-statetree-transition", {
+                "asset_path": "/Game/Test/ST_Test",
+                "source_state": "StateA"
+            })
+        self.assertIn("target_state", str(ctx.exception).lower())
+
+    def test_add_statetree_transition_nonexistent_asset(self):
+        """Test add-statetree-transition fails for non-existent StateTree."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("add-statetree-transition", {
+                "asset_path": "/Game/NonExistent/ST_DoesNotExist_12345",
+                "source_state": "StateA",
+                "target_state": "StateB"
+            })
+        error_msg = str(ctx.exception).lower()
+        self.assertTrue(
+            "not found" in error_msg or "failed to load" in error_msg,
+            f"Expected 'not found' error, got: {ctx.exception}"
+        )
+
+    def test_add_statetree_transition_nonexistent_source(self):
+        """Test add-statetree-transition fails when source state doesn't exist."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("add-statetree-transition", {
+                "asset_path": self.test_statetree_path,
+                "source_state": "NonExistentState_12345",
+                "target_state": "Succeeded"
+            })
+        error_msg = str(ctx.exception).lower()
+        self.assertTrue(
+            "not found" in error_msg or "source" in error_msg,
+            f"Expected 'source not found' error, got: {ctx.exception}"
+        )
+
+    def test_add_statetree_transition_to_succeeded(self):
+        """Test adding a transition to 'Succeeded' special state."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        # First get a valid state name
+        query_result = self.client.call_tool("query-statetree", {
+            "asset_path": self.test_statetree_path,
+            "include": "states"
+        })
+        states = query_result.get("states", {}).get("items", [])
+        if not states:
+            self.skipTest("No states in StateTree for testing")
+
+        source_state = states[0].get("name")
+
+        result = self.client.call_tool("add-statetree-transition", {
+            "asset_path": self.test_statetree_path,
+            "source_state": source_state,
+            "target_state": "Succeeded"
+        })
+
+        # This should succeed without error
+        self.assertTrue(result.get("success"), "add-statetree-transition should succeed")
+        self.assertEqual(result.get("target_state"), "Succeeded")
+
+    def test_add_statetree_transition_to_failed(self):
+        """Test adding a transition to 'Failed' special state."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        query_result = self.client.call_tool("query-statetree", {
+            "asset_path": self.test_statetree_path,
+            "include": "states"
+        })
+        states = query_result.get("states", {}).get("items", [])
+        if not states:
+            self.skipTest("No states in StateTree for testing")
+
+        source_state = states[0].get("name")
+
+        result = self.client.call_tool("add-statetree-transition", {
+            "asset_path": self.test_statetree_path,
+            "source_state": source_state,
+            "target_state": "Failed",
+            "trigger": "OnStateFailed"
+        })
+
+        self.assertTrue(result.get("success"), "add-statetree-transition should succeed")
+        self.assertEqual(result.get("trigger"), "OnStateFailed")
+
+    def test_add_statetree_transition_with_priority(self):
+        """Test adding a transition with specific priority."""
+        if not self.test_statetree_path:
+            self.skipTest("No StateTree found for testing")
+
+        query_result = self.client.call_tool("query-statetree", {
+            "asset_path": self.test_statetree_path,
+            "include": "states"
+        })
+        states = query_result.get("states", {}).get("items", [])
+        if not states:
+            self.skipTest("No states in StateTree for testing")
+
+        source_state = states[0].get("name")
+
+        result = self.client.call_tool("add-statetree-transition", {
+            "asset_path": self.test_statetree_path,
+            "source_state": source_state,
+            "target_state": "Next",
+            "priority": "High"
+        })
+
+        self.assertTrue(result.get("success"), "add-statetree-transition should succeed")
+        self.assertEqual(result.get("priority"), "High")
 
 
 class TestMiscReadTools(McpTestCase):

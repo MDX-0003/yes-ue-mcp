@@ -35,6 +35,13 @@
 #include "Tools/Write/AddDataTableRowTool.h"
 #include "Tools/Write/RemoveDataTableRowTool.h"
 
+// StateTree tools
+#include "Tools/StateTree/QueryStateTreeTool.h"
+#include "Tools/StateTree/AddStateTreeStateTool.h"
+#include "Tools/StateTree/AddStateTreeTransitionTool.h"
+#include "Tools/StateTree/AddStateTreeTaskTool.h"
+#include "Tools/StateTree/RemoveStateTreeStateTool.h"
+
 DEFINE_LOG_CATEGORY(LogYesUeMcpEditor);
 DEFINE_LOG_CATEGORY(LogYesUeMcp);
 
@@ -120,6 +127,13 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 	// Write tools - DataTable
 	Registry.RegisterToolClass(UAddDataTableRowTool::StaticClass());
 	Registry.RegisterToolClass(URemoveDataTableRowTool::StaticClass());
+
+	// StateTree tools
+	Registry.RegisterToolClass(UQueryStateTreeTool::StaticClass());
+	Registry.RegisterToolClass(UAddStateTreeStateTool::StaticClass());
+	Registry.RegisterToolClass(UAddStateTreeTransitionTool::StaticClass());
+	Registry.RegisterToolClass(UAddStateTreeTaskTool::StaticClass());
+	Registry.RegisterToolClass(URemoveStateTreeStateTool::StaticClass());
 
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("Registered %d MCP tools"), Registry.GetToolCount());
 }

@@ -66,7 +66,11 @@ public class YesUeMcpEditor : ModuleRules
 			// Project Settings
 			"GameplayTags",
 			"EngineSettings",
-			"Projects"
+			"Projects",
+
+			// StateTree
+			"StateTreeModule",
+			"StateTreeEditorModule"
 		});
 	}
 }
