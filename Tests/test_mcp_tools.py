@@ -2998,6 +2998,45 @@ print(f'Count: {count}')
             f"Expected mutually exclusive error: {ctx.exception}"
         )
 
+    def test_query_project_info(self):
+        """Test using Python to query project info."""
+        result = self.client.call_tool("run-python-script", {
+            "script": """
+import unreal
+project_name = unreal.SystemLibrary.get_project_name()
+engine_version = unreal.SystemLibrary.get_engine_version()
+print(f'Project: {project_name}')
+print(f'Engine: {engine_version}')
+"""
+        })
+        self.assertTrue(result.get("success"))
+
+    def test_multiline_output(self):
+        """Test that multiline output is captured correctly."""
+        result = self.client.call_tool("run-python-script", {
+            "script": """
+for i in range(5):
+    print(f'Line {i}')
+"""
+        })
+        self.assertTrue(result.get("success"))
+
+    def test_import_standard_library(self):
+        """Test importing Python standard library modules."""
+        result = self.client.call_tool("run-python-script", {
+            "script": """
+import os
+import sys
+import json
+
+print(f'Python version: {sys.version_info.major}.{sys.version_info.minor}')
+data = {'test': 'value', 'number': 42}
+json_str = json.dumps(data)
+print(f'JSON: {json_str}')
+"""
+        })
+        self.assertTrue(result.get("success"))
+
 
 class TestDynamicClassResolution(McpTestCase):
     """Test the class resolution system works correctly."""

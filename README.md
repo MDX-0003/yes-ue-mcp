@@ -88,6 +88,41 @@ claude mcp add --transport http unreal-engine http://localhost:8080/mcp
 
 ## Available Tools
 
+**29 tools total** (10 read + 19 write/modify tools)
+
+Latest additions:
+- **v1.10.0**: `run-python-script` - Execute Python scripts in Unreal Editor with argument passing
+- **v1.9.0**: Dynamic reflection support for materials, nodes, and assets
+- **v1.8.0**: StateTree query and modification tools
+
+> **Note:** This README shows legacy tool documentation. For the current consolidated tool architecture, see [.claude/CLAUDE.md](.claude/CLAUDE.md) which includes:
+> - Consolidated read tools (query-blueprint, query-asset, query-material, etc.)
+> - Write tools (set-property, add-graph-node, create-asset, etc.)
+> - StateTree tools (query-statetree, add-statetree-state, etc.)
+> - **Scripting tools (run-python-script)**
+
+### Python Scripting (New in v1.10.0)
+
+#### `run-python-script`
+Execute Python scripts in Unreal Editor's Python environment.
+
+**Parameters:**
+- `script` (string, optional) - Inline Python code
+- `script_path` (string, optional) - Path to Python script file
+- `arguments` (object, optional) - Arguments accessible via `unreal.get_mcp_args()`
+
+**Requirements:** PythonScriptPlugin must be enabled
+
+**Example:**
+```json
+{
+  "script": "import unreal\nprint(unreal.SystemLibrary.get_project_name())",
+  "arguments": {"asset_path": "/Game/MyAsset"}
+}
+```
+
+---
+
 ### Blueprint Analysis (7 tools)
 
 #### `analyze-blueprint`

@@ -140,7 +140,7 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 - **Port:** 8080 (configurable)
 - **CORS:** Enabled for cross-origin requests
 
-## Available Tools (28 total)
+## Available Tools (29 total)
 
 ### Read Tools (10) - Consolidated in v1.6.0
 
@@ -186,7 +186,7 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 |------|-------------|
 | `get-logs` | Retrieve UE Output Log entries with filtering (category, severity, search) |
 
-### Write Tools (18)
+### Write Tools (19)
 
 #### Property Tools
 | Tool | Description |
@@ -229,6 +229,11 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 | `add-datatable-row` | Add a row to a DataTable |
 | `remove-datatable-row` | Remove a row from a DataTable |
 
+#### Scripting Tools
+| Tool | Description |
+|------|-------------|
+| `run-python-script` | Execute Python scripts in Unreal Editor (inline or file). Supports argument passing via `arguments` param. Requires PythonScriptPlugin enabled. |
+
 ## Write Tool Usage
 
 ### Property Modification Pattern
@@ -253,6 +258,36 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 
 ### Transaction Support
 All write operations are wrapped in `FScopedTransaction` for undo/redo support.
+
+### Python Scripting Pattern
+```json
+// Inline script
+{
+  "script": "import unreal\nprint('Hello from Python')"
+}
+
+// Script file
+{
+  "script_path": "/path/to/script.py"
+}
+
+// With arguments
+{
+  "script": "import unreal\nargs = unreal.get_mcp_args()\nprint(args.get('name'))",
+  "arguments": {"name": "MyAsset", "count": 42}
+}
+```
+
+**Python Script Workflow:**
+1. Use `run-python-script` with inline code or file path
+2. Access arguments via `unreal.get_mcp_args()` if provided
+3. Use full `unreal` module API for Editor operations
+4. Output is captured and returned in response
+
+**Requirements:**
+- PythonScriptPlugin must be enabled in Unreal Editor
+- Enable via: Edit > Plugins > Scripting > Python Editor Script Plugin
+- Restart editor after enabling
 
 ## Logging
 
