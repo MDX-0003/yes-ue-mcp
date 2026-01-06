@@ -45,6 +45,9 @@
 // Scripting tools
 #include "Tools/Scripting/RunPythonScriptTool.h"
 
+// Build tools
+#include "Tools/Build/TriggerLiveCodingTool.h"
+
 DEFINE_LOG_CATEGORY(LogYesUeMcpEditor);
 DEFINE_LOG_CATEGORY(LogYesUeMcp);
 
@@ -140,6 +143,9 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 
 	// Scripting tools
 	Registry.RegisterToolClass(URunPythonScriptTool::StaticClass());
+
+	// Build tools
+	Registry.RegisterToolClass(UTriggerLiveCodingTool::StaticClass());
 
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("Registered %d MCP tools"), Registry.GetToolCount());
 }

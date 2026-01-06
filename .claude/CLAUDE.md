@@ -140,7 +140,7 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 - **Port:** 8080 (configurable)
 - **CORS:** Enabled for cross-origin requests
 
-## Available Tools (29 total)
+## Available Tools (30 total)
 
 ### Read Tools (10) - Consolidated in v1.6.0
 
@@ -186,7 +186,7 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 |------|-------------|
 | `get-logs` | Retrieve UE Output Log entries with filtering (category, severity, search) |
 
-### Write Tools (19)
+### Write Tools (20)
 
 #### Property Tools
 | Tool | Description |
@@ -233,6 +233,11 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 | Tool | Description |
 |------|-------------|
 | `run-python-script` | Execute Python scripts in Unreal Editor (inline or file). Supports argument passing via `arguments` param. Requires PythonScriptPlugin enabled. |
+
+#### Build Tools
+| Tool | Description |
+|------|-------------|
+| `trigger-live-coding` | Trigger Live Coding compilation for C++ code changes (Ctrl+Alt+F11 equivalent). Windows only. Requires Live Coding enabled in Editor Preferences. |
 
 ## Write Tool Usage
 

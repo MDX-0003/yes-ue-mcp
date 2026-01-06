@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-MCP Tools Integration Tests (v1.10.0 - Python Scripting)
+MCP Tools Integration Tests (v1.11.0 - Live Coding)
 
 This script tests the yes-ue-mcp plugin tools using Python's unittest framework.
-Updated for the consolidated tool architecture (11 read tools + 23 write tools).
+Updated for the consolidated tool architecture (10 read tools + 20 write tools).
 
 v1.9.0 Dynamic Reflection Features:
     - Dynamic material expression creation (any UMaterialExpression class)
@@ -21,6 +21,9 @@ StateTree Tools:
 
 Scripting Tools:
     - run-python-script: Execute Python scripts in Unreal Editor (inline or file)
+
+Build Tools:
+    - trigger-live-coding: Trigger Live Coding compilation (Ctrl+Alt+F11 equivalent)
 
 Consolidated Read Tools:
     - query-blueprint: Merged from analyze-blueprint, get-blueprint-functions,
@@ -3036,6 +3039,36 @@ print(f'JSON: {json_str}')
 """
         })
         self.assertTrue(result.get("success"))
+
+
+class TestTriggerLiveCoding(McpTestCase):
+    """Test trigger-live-coding tool."""
+
+    def test_trigger_async(self):
+        """Test triggering Live Coding compilation (async mode)."""
+        result = self.client.call_tool("trigger-live-coding", {})
+        self.assertTrue(result.get("success"), "Live Coding should trigger successfully")
+        self.assertIn("status", result)
+        self.assertIn("message", result)
+
+    def test_trigger_with_wait_param(self):
+        """Test trigger with wait_for_completion parameter (not yet implemented)."""
+        result = self.client.call_tool("trigger-live-coding", {
+            "wait_for_completion": True
+        })
+        self.assertTrue(result.get("success"))
+        # Note: wait_for_completion is accepted but not yet implemented
+        if "note" in result:
+            self.assertIn("not yet implemented", result.get("note").lower())
+
+    def test_response_format(self):
+        """Test that response has expected fields."""
+        result = self.client.call_tool("trigger-live-coding", {})
+        self.assertIn("success", result)
+        self.assertIn("status", result)
+        self.assertIn("message", result)
+        self.assertIn("shortcut", result)
+        self.assertEqual(result.get("shortcut"), "Ctrl+Alt+F11")
 
 
 class TestDynamicClassResolution(McpTestCase):

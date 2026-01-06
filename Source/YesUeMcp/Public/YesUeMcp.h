@@ -6,7 +6,7 @@
 #include "Modules/ModuleManager.h"
 
 /** Plugin version - keep in sync with YesUeMcp.uplugin */
-#define YESUEMCP_VERSION TEXT("1.10.0")
+#define YESUEMCP_VERSION TEXT("1.11.0")
 
 DECLARE_LOG_CATEGORY_EXTERN(LogYesUeMcp, Log, All);
 
