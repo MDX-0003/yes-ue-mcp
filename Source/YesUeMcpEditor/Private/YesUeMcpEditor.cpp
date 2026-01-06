@@ -42,6 +42,9 @@
 #include "Tools/StateTree/AddStateTreeTaskTool.h"
 #include "Tools/StateTree/RemoveStateTreeStateTool.h"
 
+// Scripting tools
+#include "Tools/Scripting/RunPythonScriptTool.h"
+
 DEFINE_LOG_CATEGORY(LogYesUeMcpEditor);
 DEFINE_LOG_CATEGORY(LogYesUeMcp);
 
@@ -134,6 +137,9 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 	Registry.RegisterToolClass(UAddStateTreeTransitionTool::StaticClass());
 	Registry.RegisterToolClass(UAddStateTreeTaskTool::StaticClass());
 	Registry.RegisterToolClass(URemoveStateTreeStateTool::StaticClass());
+
+	// Scripting tools
+	Registry.RegisterToolClass(URunPythonScriptTool::StaticClass());
 
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("Registered %d MCP tools"), Registry.GetToolCount());
 }

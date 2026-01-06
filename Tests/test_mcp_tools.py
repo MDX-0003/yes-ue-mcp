@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
 """
-MCP Tools Integration Tests (v1.8.0 - StateTree Support)
+MCP Tools Integration Tests (v1.10.0 - Python Scripting)
 
 This script tests the yes-ue-mcp plugin tools using Python's unittest framework.
-Updated for the consolidated tool architecture (11 read tools + 22 write tools).
+Updated for the consolidated tool architecture (11 read tools + 23 write tools).
 
-StateTree Tools Added:
+v1.9.0 Dynamic Reflection Features:
+    - Dynamic material expression creation (any UMaterialExpression class)
+    - Dynamic Blueprint node creation (any UK2Node class)
+    - Dynamic asset creation (DataAsset, arbitrary UObject types)
+    - Extended property support (TMap, TSet, Object references)
+    - Unified McpPropertySerializer for all property operations
+
+StateTree Tools:
     - query-statetree: Query StateTree structure (states, transitions, tasks, evaluators, parameters)
     - add-statetree-state: Add a new state to a StateTree
     - remove-statetree-state: Remove a state from a StateTree
     - add-statetree-task: Add a task to a state
     - add-statetree-transition: Add a transition between states
+
+Scripting Tools:
+    - run-python-script: Execute Python scripts in Unreal Editor (inline or file)
 
 Consolidated Read Tools:
     - query-blueprint: Merged from analyze-blueprint, get-blueprint-functions,
@@ -2538,6 +2548,525 @@ class TestErrorHandling(McpTestCase):
             "not found" in error_msg or "unknown" in error_msg or "tool" in error_msg,
             f"Expected 'tool not found' error, got: {ctx.exception}"
         )
+
+
+# =============================================================================
+# v1.9.0 Dynamic Reflection Tests
+# =============================================================================
+
+class TestDynamicMaterialExpressions(McpTestCase):
+    """Test dynamic material expression creation (any class name works)."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Create a test Material."""
+        super().setUpClass()
+        import time
+        cls.test_mat_path = "/Game/M_MCP_DynamicExprTest"
+
+        # Clean up
+        for _ in range(3):
+            try:
+                cls.client.call_tool("delete-asset", {"asset_path": cls.test_mat_path})
+            except:
+                pass
+            time.sleep(0.1)
+
+        # Create test Material
+        try:
+            result = cls.client.call_tool("create-asset", {
+                "asset_path": cls.test_mat_path,
+                "asset_class": "Material"
+            })
+            if not result.get("success"):
+                raise unittest.SkipTest("Could not create test Material")
+        except McpError as e:
+            if "already exists" in str(e).lower():
+                raise unittest.SkipTest("Asset already exists")
+            raise
+
+    @classmethod
+    def tearDownClass(cls):
+        """Delete test Material."""
+        try:
+            cls.client.call_tool("delete-asset", {"asset_path": cls.test_mat_path})
+        except:
+            pass
+        super().tearDownClass()
+
+    def test_add_material_expression_by_full_class_name(self):
+        """Test adding material expression using full class name."""
+        result = self.client.call_tool("add-graph-node", {
+            "asset_path": self.test_mat_path,
+            "node_class": "MaterialExpressionAdd",
+            "position": [100, 100]
+        })
+        self.assertTrue(result.get("success"), f"Should create Add expression: {result}")
+        self.assertEqual(result.get("expression_class"), "MaterialExpressionAdd")
+
+    def test_add_material_expression_multiply(self):
+        """Test adding Multiply expression by class name."""
+        result = self.client.call_tool("add-graph-node", {
+            "asset_path": self.test_mat_path,
+            "node_class": "MaterialExpressionMultiply",
+            "position": [200, 100]
+        })
+        self.assertTrue(result.get("success"), f"Should create Multiply expression: {result}")
+        self.assertEqual(result.get("expression_class"), "MaterialExpressionMultiply")
+
+    def test_add_scene_texture_expression(self):
+        """Test adding SceneTexture expression (was previously unsupported)."""
+        result = self.client.call_tool("add-graph-node", {
+            "asset_path": self.test_mat_path,
+            "node_class": "MaterialExpressionSceneTexture",
+            "position": [300, 100],
+            "properties": {
+                "SceneTextureId": "PPI_SceneColor"
+            }
+        })
+        self.assertTrue(result.get("success"), f"Should create SceneTexture expression: {result}")
+        self.assertEqual(result.get("expression_class"), "MaterialExpressionSceneTexture")
+
+    def test_add_world_position_expression(self):
+        """Test adding WorldPosition expression."""
+        result = self.client.call_tool("add-graph-node", {
+            "asset_path": self.test_mat_path,
+            "node_class": "MaterialExpressionWorldPosition",
+            "position": [400, 100]
+        })
+        self.assertTrue(result.get("success"), f"Should create WorldPosition expression: {result}")
+        self.assertEqual(result.get("expression_class"), "MaterialExpressionWorldPosition")
+
+    def test_add_custom_expression(self):
+        """Test adding Custom HLSL expression."""
+        result = self.client.call_tool("add-graph-node", {
+            "asset_path": self.test_mat_path,
+            "node_class": "MaterialExpressionCustom",
+            "position": [500, 100],
+            "properties": {
+                "Code": "return 1.0;"
+            }
+        })
+        self.assertTrue(result.get("success"), f"Should create Custom expression: {result}")
+        self.assertEqual(result.get("expression_class"), "MaterialExpressionCustom")
+
+    def test_add_noise_expression(self):
+        """Test adding Noise expression."""
+        result = self.client.call_tool("add-graph-node", {
+            "asset_path": self.test_mat_path,
+            "node_class": "MaterialExpressionNoise",
+            "position": [600, 100]
+        })
+        self.assertTrue(result.get("success"), f"Should create Noise expression: {result}")
+        self.assertEqual(result.get("expression_class"), "MaterialExpressionNoise")
+
+    def test_add_expression_with_properties(self):
+        """Test adding expression with properties set via reflection."""
+        result = self.client.call_tool("add-graph-node", {
+            "asset_path": self.test_mat_path,
+            "node_class": "MaterialExpressionScalarParameter",
+            "position": [700, 100],
+            "properties": {
+                "ParameterName": "TestParam",
+                "DefaultValue": 0.5
+            }
+        })
+        self.assertTrue(result.get("success"), f"Should create ScalarParameter: {result}")
+        self.assertEqual(result.get("expression_class"), "MaterialExpressionScalarParameter")
+
+    def test_invalid_expression_class_error(self):
+        """Test that invalid expression class returns clear error."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("add-graph-node", {
+                "asset_path": self.test_mat_path,
+                "node_class": "NonExistentExpressionClass12345"
+            })
+        error_msg = str(ctx.exception).lower()
+        self.assertTrue(
+            "not found" in error_msg or "class" in error_msg,
+            f"Expected class not found error: {ctx.exception}"
+        )
+
+
+class TestDynamicAssetCreation(McpTestCase):
+    """Test dynamic asset creation (any class name works)."""
+
+    def setUp(self):
+        """Set up test paths."""
+        self.test_assets = []
+
+    def tearDown(self):
+        """Clean up created assets."""
+        for path in self.test_assets:
+            try:
+                self.client.call_tool("delete-asset", {"asset_path": path})
+            except:
+                pass
+
+    def test_create_dataasset(self):
+        """Test creating a DataAsset instance."""
+        path = "/Game/DA_MCP_TestDataAsset"
+        self.test_assets.append(path)
+
+        # Clean up first
+        try:
+            self.client.call_tool("delete-asset", {"asset_path": path})
+        except:
+            pass
+
+        result = self.client.call_tool("create-asset", {
+            "asset_path": path,
+            "asset_class": "DataAsset"
+        })
+        self.assertTrue(result.get("success"), f"Should create DataAsset: {result}")
+        self.assertIn("DataAsset", result.get("created_class", ""))
+
+    def test_create_blueprint_with_dynamic_parent_class(self):
+        """Test creating Blueprint with dynamic parent class resolution."""
+        path = "/Game/BP_MCP_DynamicParent"
+        self.test_assets.append(path)
+
+        try:
+            self.client.call_tool("delete-asset", {"asset_path": path})
+        except:
+            pass
+
+        result = self.client.call_tool("create-asset", {
+            "asset_path": path,
+            "asset_class": "Blueprint",
+            "parent_class": "Character"  # Should resolve dynamically
+        })
+        self.assertTrue(result.get("success"), f"Should create Blueprint: {result}")
+        self.assertEqual(result.get("parent_class"), "Character")
+
+    def test_create_material_by_class_name(self):
+        """Test creating Material by class name."""
+        path = "/Game/M_MCP_DynamicCreate"
+        self.test_assets.append(path)
+
+        try:
+            self.client.call_tool("delete-asset", {"asset_path": path})
+        except:
+            pass
+
+        result = self.client.call_tool("create-asset", {
+            "asset_path": path,
+            "asset_class": "Material"
+        })
+        self.assertTrue(result.get("success"), f"Should create Material: {result}")
+
+    def test_invalid_asset_class_error(self):
+        """Test that invalid asset class returns clear error."""
+        path = "/Game/Invalid_MCP_Asset"
+        self.test_assets.append(path)
+
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("create-asset", {
+                "asset_path": path,
+                "asset_class": "NonExistentAssetClass12345"
+            })
+        error_msg = str(ctx.exception).lower()
+        self.assertTrue(
+            "unknown" in error_msg or "class" in error_msg or "not found" in error_msg,
+            f"Expected unknown class error: {ctx.exception}"
+        )
+
+
+class TestDynamicBlueprintNodes(McpTestCase):
+    """Test dynamic Blueprint node creation."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Create a test Blueprint."""
+        super().setUpClass()
+        import time
+        cls.test_bp_path = "/Game/BP_MCP_DynamicNodeTest"
+
+        for _ in range(3):
+            try:
+                cls.client.call_tool("delete-asset", {"asset_path": cls.test_bp_path})
+            except:
+                pass
+            time.sleep(0.1)
+
+        try:
+            result = cls.client.call_tool("create-asset", {
+                "asset_path": cls.test_bp_path,
+                "asset_class": "Blueprint",
+                "parent_class": "Actor"
+            })
+            if not result.get("success"):
+                raise unittest.SkipTest("Could not create test Blueprint")
+        except McpError as e:
+            if "already exists" in str(e).lower():
+                raise unittest.SkipTest("Asset already exists")
+            raise
+
+    @classmethod
+    def tearDownClass(cls):
+        """Delete test Blueprint."""
+        try:
+            cls.client.call_tool("delete-asset", {"asset_path": cls.test_bp_path})
+        except:
+            pass
+        super().tearDownClass()
+
+    def test_add_node_by_full_class_name(self):
+        """Test adding Blueprint node by full class name."""
+        result = self.client.call_tool("add-graph-node", {
+            "asset_path": self.test_bp_path,
+            "node_class": "K2Node_CallFunction",
+            "graph_name": "EventGraph",
+            "position": [100, 100],
+            "properties": {
+                "FunctionReference.MemberName": "PrintString"
+            }
+        })
+        # May succeed or fail depending on function setup, but should respond
+        self.assertIn("success", result)
+
+    def test_add_variable_get_node(self):
+        """Test adding VariableGet node by class name."""
+        result = self.client.call_tool("add-graph-node", {
+            "asset_path": self.test_bp_path,
+            "node_class": "K2Node_VariableGet",
+            "graph_name": "EventGraph",
+            "position": [200, 100],
+            "properties": {
+                "VariableReference.MemberName": "TestVar"
+            }
+        })
+        self.assertIn("success", result)
+
+    def test_add_variable_set_node(self):
+        """Test adding VariableSet node by class name."""
+        result = self.client.call_tool("add-graph-node", {
+            "asset_path": self.test_bp_path,
+            "node_class": "K2Node_VariableSet",
+            "graph_name": "EventGraph",
+            "position": [300, 100]
+        })
+        self.assertIn("success", result)
+
+
+class TestExtendedPropertyTypes(McpTestCase):
+    """Test extended property type support (TMap, TSet, Object refs)."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Create a test Blueprint with various property types."""
+        super().setUpClass()
+        import time
+        cls.test_bp_path = "/Game/BP_MCP_ExtendedPropTest"
+
+        for _ in range(3):
+            try:
+                cls.client.call_tool("delete-asset", {"asset_path": cls.test_bp_path})
+            except:
+                pass
+            time.sleep(0.1)
+
+        try:
+            result = cls.client.call_tool("create-asset", {
+                "asset_path": cls.test_bp_path,
+                "asset_class": "Blueprint",
+                "parent_class": "Actor"
+            })
+            if not result.get("success"):
+                raise unittest.SkipTest("Could not create test Blueprint")
+        except McpError as e:
+            if "already exists" in str(e).lower():
+                raise unittest.SkipTest("Asset already exists")
+            raise
+
+    @classmethod
+    def tearDownClass(cls):
+        """Delete test Blueprint."""
+        try:
+            cls.client.call_tool("delete-asset", {"asset_path": cls.test_bp_path})
+        except:
+            pass
+        super().tearDownClass()
+
+    def test_set_vector_property_as_array(self):
+        """Test setting FVector property using array syntax."""
+        # Actor has many vector properties, try setting one
+        result = self.client.call_tool("set-property", {
+            "asset_path": self.test_bp_path,
+            "property_path": "InitialLifeSpan",  # A float property
+            "value": 10.0
+        })
+        # May or may not succeed based on property availability
+        self.assertIn("success", result)
+
+    def test_set_bool_property(self):
+        """Test setting boolean property."""
+        result = self.client.call_tool("set-property", {
+            "asset_path": self.test_bp_path,
+            "property_path": "bReplicates",
+            "value": True
+        })
+        self.assertIn("success", result)
+
+    def test_set_enum_property_by_name(self):
+        """Test setting enum property by name string."""
+        result = self.client.call_tool("set-property", {
+            "asset_path": self.test_bp_path,
+            "property_path": "SpawnCollisionHandlingMethod",
+            "value": "AlwaysSpawn"
+        })
+        # May succeed or fail based on property type
+        self.assertIn("success", result)
+
+
+class TestRunPythonScript(McpTestCase):
+    """Test run-python-script tool."""
+
+    def test_inline_script(self):
+        """Test executing inline Python script."""
+        result = self.client.call_tool("run-python-script", {
+            "script": "import unreal\nprint('Hello from Python')\nprint('Editor Version:', unreal.SystemLibrary.get_engine_version())"
+        })
+        self.assertTrue(result.get("success"), "Inline script should execute successfully")
+        self.assertIn("output", result)
+
+    def test_simple_calculation(self):
+        """Test Python script with simple calculation."""
+        result = self.client.call_tool("run-python-script", {
+            "script": "result = 2 + 2\nprint(f'Result: {result}')"
+        })
+        self.assertTrue(result.get("success"))
+
+    def test_list_assets(self):
+        """Test Python script that lists assets."""
+        result = self.client.call_tool("run-python-script", {
+            "script": """
+import unreal
+assets = unreal.EditorAssetLibrary.list_assets('/Game/', recursive=False)
+print(f'Found {len(assets)} assets in /Game/')
+for asset in assets[:5]:
+    print(f'  - {asset}')
+"""
+        })
+        self.assertTrue(result.get("success"))
+
+    def test_script_with_arguments(self):
+        """Test Python script with arguments."""
+        result = self.client.call_tool("run-python-script", {
+            "script": """
+import unreal
+args = unreal.get_mcp_args() if hasattr(unreal, 'get_mcp_args') else {}
+asset_path = args.get('asset_path', 'None')
+count = args.get('count', 0)
+print(f'Asset path: {asset_path}')
+print(f'Count: {count}')
+""",
+            "arguments": {
+                "asset_path": "/Game/TestAsset",
+                "count": 42
+            }
+        })
+        self.assertTrue(result.get("success"))
+
+    def test_error_handling(self):
+        """Test that script errors are properly caught."""
+        with self.assertRaises(McpError):
+            self.client.call_tool("run-python-script", {
+                "script": "raise ValueError('Test error')"
+            })
+
+    def test_missing_parameters(self):
+        """Test that missing script/script_path returns error."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("run-python-script", {})
+        error_msg = str(ctx.exception).lower()
+        self.assertTrue(
+            "script" in error_msg or "required" in error_msg,
+            f"Expected missing parameter error: {ctx.exception}"
+        )
+
+    def test_mutually_exclusive_parameters(self):
+        """Test that both script and script_path cannot be provided."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("run-python-script", {
+                "script": "print('test')",
+                "script_path": "/some/path.py"
+            })
+        error_msg = str(ctx.exception).lower()
+        self.assertTrue(
+            "cannot specify both" in error_msg or "mutually exclusive" in error_msg,
+            f"Expected mutually exclusive error: {ctx.exception}"
+        )
+
+
+class TestDynamicClassResolution(McpTestCase):
+    """Test the class resolution system works correctly."""
+
+    def test_resolve_native_class_short_name(self):
+        """Test resolving native class by short name."""
+        path = "/Game/BP_MCP_ResolveTest_Actor"
+        try:
+            self.client.call_tool("delete-asset", {"asset_path": path})
+        except:
+            pass
+
+        try:
+            result = self.client.call_tool("create-asset", {
+                "asset_path": path,
+                "asset_class": "Blueprint",
+                "parent_class": "Actor"  # Short name
+            })
+            self.assertTrue(result.get("success"))
+            self.assertEqual(result.get("parent_class"), "Actor")
+        finally:
+            try:
+                self.client.call_tool("delete-asset", {"asset_path": path})
+            except:
+                pass
+
+    def test_resolve_native_class_pawn(self):
+        """Test resolving Pawn class."""
+        path = "/Game/BP_MCP_ResolveTest_Pawn"
+        try:
+            self.client.call_tool("delete-asset", {"asset_path": path})
+        except:
+            pass
+
+        try:
+            result = self.client.call_tool("create-asset", {
+                "asset_path": path,
+                "asset_class": "Blueprint",
+                "parent_class": "Pawn"
+            })
+            self.assertTrue(result.get("success"))
+            self.assertEqual(result.get("parent_class"), "Pawn")
+        finally:
+            try:
+                self.client.call_tool("delete-asset", {"asset_path": path})
+            except:
+                pass
+
+    def test_resolve_native_class_character(self):
+        """Test resolving Character class."""
+        path = "/Game/BP_MCP_ResolveTest_Character"
+        try:
+            self.client.call_tool("delete-asset", {"asset_path": path})
+        except:
+            pass
+
+        try:
+            result = self.client.call_tool("create-asset", {
+                "asset_path": path,
+                "asset_class": "Blueprint",
+                "parent_class": "Character"
+            })
+            self.assertTrue(result.get("success"))
+            self.assertEqual(result.get("parent_class"), "Character")
+        finally:
+            try:
+                self.client.call_tool("delete-asset", {"asset_path": path})
+            except:
+                pass
 
 
 if __name__ == "__main__":

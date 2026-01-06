@@ -70,7 +70,10 @@ public class YesUeMcpEditor : ModuleRules
 
 			// StateTree
 			"StateTreeModule",
-			"StateTreeEditorModule"
+			"StateTreeEditorModule",
+
+			// Python Scripting
+			"PythonScriptPlugin"
 		});
 	}
 }
