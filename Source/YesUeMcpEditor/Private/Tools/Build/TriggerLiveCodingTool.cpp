@@ -93,17 +93,15 @@ FMcpToolResult UTriggerLiveCodingTool::ExecuteSynchronous(ILiveCodingModule* Liv
 	// State for tracking compilation completion
 	bool bCompilationComplete = false;
 	bool bCompilationSuccess = false;
-	FString CompilationLog;
 
-	// Bind to completion delegate
+	// Bind to completion delegate (FOnPatchCompleteDelegate takes no parameters, only called on success)
 	FDelegateHandle OnPatchCompleteHandle = LiveCodingModule->GetOnPatchCompleteDelegate().AddLambda(
-		[&bCompilationComplete, &bCompilationSuccess, &CompilationLog](bool bSuccess, const FString& LogOutput)
+		[&bCompilationComplete, &bCompilationSuccess]()
 		{
 			bCompilationComplete = true;
-			bCompilationSuccess = bSuccess;
-			CompilationLog = LogOutput;
+			bCompilationSuccess = true;
 
-			UE_LOG(LogYesUeMcp, Log, TEXT("trigger-live-coding: Compilation completed (success=%d)"), bSuccess);
+			UE_LOG(LogYesUeMcp, Log, TEXT("trigger-live-coding: Compilation completed successfully"));
 		}
 	);
 
@@ -152,11 +150,6 @@ FMcpToolResult UTriggerLiveCodingTool::ExecuteSynchronous(ILiveCodingModule* Liv
 	Result->SetStringField(TEXT("status"), bCompilationSuccess ? TEXT("completed") : TEXT("failed"));
 	Result->SetNumberField(TEXT("compilation_time_seconds"), CompilationTime);
 	Result->SetStringField(TEXT("shortcut"), TEXT("Ctrl+Alt+F11"));
-
-	if (!CompilationLog.IsEmpty())
-	{
-		Result->SetStringField(TEXT("compilation_log"), CompilationLog);
-	}
 
 	if (bCompilationSuccess)
 	{

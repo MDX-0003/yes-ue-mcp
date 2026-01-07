@@ -232,7 +232,7 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 #### Scripting Tools
 | Tool | Description |
 |------|-------------|
-| `run-python-script` | Execute Python scripts in Unreal Editor (inline or file). Supports argument passing via `arguments` param. Requires PythonScriptPlugin enabled. |
+| `run-python-script` | Execute Python scripts in Unreal Editor (inline or file). Supports argument passing via `arguments` param and additional Python paths via `python_paths` param for module imports. Requires PythonScriptPlugin enabled. |
 
 #### Build Tools
 | Tool | Description |
@@ -281,6 +281,22 @@ All write operations are wrapped in `FScopedTransaction` for undo/redo support.
 {
   "script": "import unreal\nargs = unreal.get_mcp_args()\nprint(args.get('name'))",
   "arguments": {"name": "MyAsset", "count": 42}
+}
+
+// With additional Python paths for module imports
+{
+  "script_path": "/Game/Python/test_combat.py",
+  "python_paths": [
+    "/Game/Python/lib",
+    "/Game/Python/helpers"
+  ]
+}
+
+// Full example with all features
+{
+  "script": "from combat_helpers import spawn_test_actors\nargs = unreal.get_mcp_args()\nspawn_test_actors(args['level'])",
+  "python_paths": ["/Game/Python/lib"],
+  "arguments": {"level": "/Game/Maps/TestArena"}
 }
 ```
 

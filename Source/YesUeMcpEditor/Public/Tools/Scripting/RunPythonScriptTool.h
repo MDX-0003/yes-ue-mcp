@@ -33,6 +33,6 @@ private:
 	// Read script file from disk
 	bool ReadScriptFile(const FString& ScriptPath, FString& OutScript, FString& OutError);
 
-	// Build Python command with arguments
-	FString BuildPythonCommand(const FString& Script, const TSharedPtr<FJsonObject>& Arguments);
+	// Build Python command with arguments and additional Python paths
+	FString BuildPythonCommand(const FString& Script, const TSharedPtr<FJsonObject>& Arguments, const TArray<FString>& PythonPaths);
 };

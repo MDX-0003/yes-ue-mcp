@@ -27,6 +27,12 @@ TMap<FString, FMcpSchemaProperty> URunPythonScriptTool::GetInputSchema() const
 	ScriptPath.bRequired = false;
 	Schema.Add(TEXT("script_path"), ScriptPath);
 
+	FMcpSchemaProperty PythonPaths;
+	PythonPaths.Type = TEXT("array");
+	PythonPaths.Description = TEXT("Additional directories to add to Python sys.path for module imports (array of strings)");
+	PythonPaths.bRequired = false;
+	Schema.Add(TEXT("python_paths"), PythonPaths);
+
 	FMcpSchemaProperty Arguments;
 	Arguments.Type = TEXT("object");
 	Arguments.Description = TEXT("Arguments to pass to the script (accessible via unreal.get_mcp_args())");
@@ -78,8 +84,27 @@ FMcpToolResult URunPythonScriptTool::Execute(
 		UE_LOG(LogYesUeMcp, Log, TEXT("run-python-script: Loaded script from %s"), *ScriptPath);
 	}
 
-	// Build Python command with arguments if provided
-	FString PythonCommand = BuildPythonCommand(Script, Arguments);
+	// Get additional Python paths if provided
+	TArray<FString> PythonPaths;
+	if (Arguments->HasField(TEXT("python_paths")))
+	{
+		const TArray<TSharedPtr<FJsonValue>>* PathsArray;
+		if (Arguments->TryGetArrayField(TEXT("python_paths"), PathsArray))
+		{
+			for (const TSharedPtr<FJsonValue>& PathValue : *PathsArray)
+			{
+				FString PathStr = PathValue->AsString();
+				if (!PathStr.IsEmpty())
+				{
+					PythonPaths.Add(PathStr);
+				}
+			}
+			UE_LOG(LogYesUeMcp, Log, TEXT("run-python-script: Adding %d Python path(s)"), PythonPaths.Num());
+		}
+	}
+
+	// Build Python command with arguments and paths if provided
+	FString PythonCommand = BuildPythonCommand(Script, Arguments, PythonPaths);
 
 	UE_LOG(LogYesUeMcp, Log, TEXT("run-python-script: Executing Python code..."));
 
@@ -231,36 +256,67 @@ bool URunPythonScriptTool::ReadScriptFile(const FString& ScriptPath, FString& Ou
 	return true;
 }
 
-FString URunPythonScriptTool::BuildPythonCommand(const FString& Script, const TSharedPtr<FJsonObject>& Arguments)
+FString URunPythonScriptTool::BuildPythonCommand(const FString& Script, const TSharedPtr<FJsonObject>& Arguments, const TArray<FString>& PythonPaths)
 {
+	FString FinalScript = Script;
+	bool bNeedsPreamble = false;
+	FString Preamble;
+
+	// Add Python paths to sys.path if provided
+	if (PythonPaths.Num() > 0)
+	{
+		bNeedsPreamble = true;
+		Preamble += TEXT("import sys\n");
+		Preamble += TEXT("import os\n");
+
+		for (const FString& Path : PythonPaths)
+		{
+			// Convert to absolute path if relative
+			FString AbsolutePath = Path;
+			if (FPaths::IsRelative(AbsolutePath))
+			{
+				AbsolutePath = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir(), Path);
+			}
+
+			// Normalize path separators for Python (use forward slashes)
+			AbsolutePath = AbsolutePath.Replace(TEXT("\\"), TEXT("/"));
+
+			Preamble += FString::Printf(TEXT("if os.path.exists(r'%s') and r'%s' not in sys.path:\n"), *AbsolutePath, *AbsolutePath);
+			Preamble += FString::Printf(TEXT("    sys.path.insert(0, r'%s')\n"), *AbsolutePath);
+		}
+		Preamble += TEXT("\n");
+	}
+
 	// If arguments are provided, inject them as a Python dict accessible via unreal module
 	if (Arguments.IsValid() && Arguments->HasField(TEXT("arguments")))
 	{
 		const TSharedPtr<FJsonObject>* ArgsObject;
 		if (Arguments->TryGetObjectField(TEXT("arguments"), ArgsObject))
 		{
+			bNeedsPreamble = true;
+
 			// Convert JSON object to Python dict string
 			FString ArgsJson;
 			TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ArgsJson);
 			FJsonSerializer::Serialize(ArgsObject->ToSharedRef(), Writer);
 
 			// Inject arguments as a global variable
-			FString WithArgs = FString::Printf(TEXT(
-				"import json\n"
-				"_mcp_args_json = '''%s'''\n"
-				"_mcp_args = json.loads(_mcp_args_json)\n"
-				"\n"
-				"# Make arguments accessible via unreal.get_mcp_args()\n"
-				"import unreal\n"
-				"if not hasattr(unreal, 'get_mcp_args'):\n"
-				"    unreal.get_mcp_args = lambda: _mcp_args\n"
-				"\n"
-				"%s"
-			), *ArgsJson, *Script);
-
-			return WithArgs;
+			Preamble += TEXT("import json\n");
+			Preamble += FString::Printf(TEXT("_mcp_args_json = '''%s'''\n"), *ArgsJson);
+			Preamble += TEXT("_mcp_args = json.loads(_mcp_args_json)\n");
+			Preamble += TEXT("\n");
+			Preamble += TEXT("# Make arguments accessible via unreal.get_mcp_args()\n");
+			Preamble += TEXT("import unreal\n");
+			Preamble += TEXT("if not hasattr(unreal, 'get_mcp_args'):\n");
+			Preamble += TEXT("    unreal.get_mcp_args = lambda: _mcp_args\n");
+			Preamble += TEXT("\n");
 		}
 	}
 
-	return Script;
+	if (bNeedsPreamble)
+	{
+		FinalScript = Preamble + FinalScript;
+	}
+
+	return FinalScript;
 }
