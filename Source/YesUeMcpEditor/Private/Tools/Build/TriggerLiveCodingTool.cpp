@@ -25,12 +25,6 @@ TMap<FString, FMcpSchemaProperty> UTriggerLiveCodingTool::GetInputSchema() const
 	WaitForCompletion.bRequired = false;
 	Schema.Add(TEXT("wait_for_completion"), WaitForCompletion);
 
-	FMcpSchemaProperty Timeout;
-	Timeout.Type = TEXT("number");
-	Timeout.Description = TEXT("Timeout in seconds for synchronous compilation (default: 300, max: 600)");
-	Timeout.bRequired = false;
-	Schema.Add(TEXT("timeout"), Timeout);
-
 	return Schema;
 }
 
@@ -39,10 +33,9 @@ FMcpToolResult UTriggerLiveCodingTool::Execute(
 	const FMcpToolContext& Context)
 {
 	bool bWaitForCompletion = GetBoolArgOrDefault(Arguments, TEXT("wait_for_completion"), false);
-	int32 TimeoutSeconds = FMath::Clamp(GetIntArgOrDefault(Arguments, TEXT("timeout"), 300), 10, 600);
 
-	UE_LOG(LogYesUeMcp, Log, TEXT("trigger-live-coding: Triggering Live Coding compilation (wait=%d, timeout=%ds)"),
-		bWaitForCompletion, TimeoutSeconds);
+	UE_LOG(LogYesUeMcp, Log, TEXT("trigger-live-coding: Triggering Live Coding compilation (wait=%d)"),
+		bWaitForCompletion);
 
 #if !PLATFORM_WINDOWS
 	return FMcpToolResult::Error(TEXT("Live Coding is only supported on Windows"));
@@ -77,7 +70,7 @@ FMcpToolResult UTriggerLiveCodingTool::Execute(
 	if (bWaitForCompletion)
 	{
 		// Synchronous mode: Wait for compilation to complete
-		return ExecuteSynchronous(LiveCodingModule, TimeoutSeconds);
+		return ExecuteSynchronous(LiveCodingModule);
 	}
 	else
 	{
@@ -88,79 +81,84 @@ FMcpToolResult UTriggerLiveCodingTool::Execute(
 }
 
 #if PLATFORM_WINDOWS
-FMcpToolResult UTriggerLiveCodingTool::ExecuteSynchronous(ILiveCodingModule* LiveCodingModule, int32 TimeoutSeconds)
+FMcpToolResult UTriggerLiveCodingTool::ExecuteSynchronous(ILiveCodingModule* LiveCodingModule)
 {
-	// State for tracking compilation completion
-	bool bCompilationComplete = false;
-	bool bCompilationSuccess = false;
-
-	// Bind to completion delegate (FOnPatchCompleteDelegate takes no parameters, only called on success)
-	FDelegateHandle OnPatchCompleteHandle = LiveCodingModule->GetOnPatchCompleteDelegate().AddLambda(
-		[&bCompilationComplete, &bCompilationSuccess]()
-		{
-			bCompilationComplete = true;
-			bCompilationSuccess = true;
-
-			UE_LOG(LogYesUeMcp, Log, TEXT("trigger-live-coding: Compilation completed successfully"));
-		}
-	);
-
-	// Start compilation
 	UE_LOG(LogYesUeMcp, Log, TEXT("trigger-live-coding: Starting synchronous compilation..."));
-	LiveCodingModule->Compile(ELiveCodingCompileFlags::None, nullptr);
 
-	// Wait for completion with timeout
 	const double StartTime = FPlatformTime::Seconds();
-	const double TimeoutTime = StartTime + TimeoutSeconds;
 
-	while (!bCompilationComplete)
-	{
-		// Check timeout
-		if (FPlatformTime::Seconds() > TimeoutTime)
-		{
-			LiveCodingModule->GetOnPatchCompleteDelegate().Remove(OnPatchCompleteHandle);
+	// Use WaitForCompletion flag - this blocks until compilation finishes
+	ELiveCodingCompileResult CompileResult;
+	bool bStarted = LiveCodingModule->Compile(ELiveCodingCompileFlags::WaitForCompletion, &CompileResult);
 
-			UE_LOG(LogYesUeMcp, Warning, TEXT("trigger-live-coding: Compilation timeout after %d seconds"), TimeoutSeconds);
-
-			TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-			Result->SetBoolField(TEXT("success"), false);
-			Result->SetStringField(TEXT("status"), TEXT("timeout"));
-			Result->SetStringField(TEXT("error"), FString::Printf(TEXT("Compilation timeout after %d seconds"), TimeoutSeconds));
-			Result->SetNumberField(TEXT("timeout_seconds"), TimeoutSeconds);
-
-			return FMcpToolResult::Json(Result);
-		}
-
-		// Sleep briefly to avoid busy-waiting
-		FPlatformProcess::Sleep(0.1f);
-
-		// Pump messages to process delegates
-		FTSTicker::GetCoreTicker().Tick(0.1f);
-	}
-
-	// Clean up delegate
-	LiveCodingModule->GetOnPatchCompleteDelegate().Remove(OnPatchCompleteHandle);
-
-	// Calculate compilation time
 	const double CompilationTime = FPlatformTime::Seconds() - StartTime;
 
-	// Build result
+	// Build result based on CompileResult
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-	Result->SetBoolField(TEXT("success"), bCompilationSuccess);
-	Result->SetStringField(TEXT("status"), bCompilationSuccess ? TEXT("completed") : TEXT("failed"));
 	Result->SetNumberField(TEXT("compilation_time_seconds"), CompilationTime);
 	Result->SetStringField(TEXT("shortcut"), TEXT("Ctrl+Alt+F11"));
 
-	if (bCompilationSuccess)
+	// Map ELiveCodingCompileResult to response
+	FString StatusStr;
+	FString MessageStr;
+	bool bSuccess = false;
+
+	switch (CompileResult)
 	{
-		Result->SetStringField(TEXT("message"), FString::Printf(TEXT("Live Coding compilation completed successfully in %.1fs"), CompilationTime));
+	case ELiveCodingCompileResult::Success:
+		bSuccess = true;
+		StatusStr = TEXT("completed");
+		MessageStr = FString::Printf(TEXT("Live Coding compilation completed successfully in %.1fs"), CompilationTime);
 		UE_LOG(LogYesUeMcp, Log, TEXT("trigger-live-coding: Compilation successful (%.1fs)"), CompilationTime);
-	}
-	else
-	{
-		Result->SetStringField(TEXT("message"), TEXT("Live Coding compilation failed. Check compilation_log for details."));
+		break;
+
+	case ELiveCodingCompileResult::NoChanges:
+		bSuccess = true;
+		StatusStr = TEXT("no_changes");
+		MessageStr = TEXT("No code changes detected - nothing to compile");
+		UE_LOG(LogYesUeMcp, Log, TEXT("trigger-live-coding: No changes detected"));
+		break;
+
+	case ELiveCodingCompileResult::Failure:
+		bSuccess = false;
+		StatusStr = TEXT("failed");
+		MessageStr = TEXT("Live Coding compilation failed. Check Output Log for errors.");
 		UE_LOG(LogYesUeMcp, Warning, TEXT("trigger-live-coding: Compilation failed (%.1fs)"), CompilationTime);
+		break;
+
+	case ELiveCodingCompileResult::Cancelled:
+		bSuccess = false;
+		StatusStr = TEXT("cancelled");
+		MessageStr = TEXT("Live Coding compilation was cancelled");
+		UE_LOG(LogYesUeMcp, Warning, TEXT("trigger-live-coding: Compilation cancelled"));
+		break;
+
+	case ELiveCodingCompileResult::CompileStillActive:
+		bSuccess = false;
+		StatusStr = TEXT("busy");
+		MessageStr = TEXT("A prior Live Coding compile is still in progress");
+		UE_LOG(LogYesUeMcp, Warning, TEXT("trigger-live-coding: Compile still active"));
+		break;
+
+	case ELiveCodingCompileResult::NotStarted:
+		bSuccess = false;
+		StatusStr = TEXT("not_started");
+		MessageStr = TEXT("Live Coding monitor could not be started");
+		UE_LOG(LogYesUeMcp, Warning, TEXT("trigger-live-coding: Could not start"));
+		break;
+
+	case ELiveCodingCompileResult::InProgress:
+	default:
+		bSuccess = false;
+		StatusStr = TEXT("unknown");
+		MessageStr = FString::Printf(TEXT("Unexpected compile result: %d"), static_cast<int32>(CompileResult));
+		UE_LOG(LogYesUeMcp, Warning, TEXT("trigger-live-coding: Unexpected result %d"), static_cast<int32>(CompileResult));
+		break;
 	}
+
+	Result->SetBoolField(TEXT("success"), bSuccess);
+	Result->SetStringField(TEXT("status"), StatusStr);
+	Result->SetStringField(TEXT("message"), MessageStr);
 
 	return FMcpToolResult::Json(Result);
 }

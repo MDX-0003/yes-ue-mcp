@@ -34,8 +34,8 @@ public:
 
 private:
 #if PLATFORM_WINDOWS
-	// Execute synchronous compilation with delegate-based waiting
-	FMcpToolResult ExecuteSynchronous(ILiveCodingModule* LiveCodingModule, int32 TimeoutSeconds);
+	// Execute synchronous compilation (blocks until complete)
+	FMcpToolResult ExecuteSynchronous(ILiveCodingModule* LiveCodingModule);
 
 	// Execute asynchronous compilation (fire and forget)
 	FMcpToolResult ExecuteAsynchronous(ILiveCodingModule* LiveCodingModule);
