@@ -2,18 +2,14 @@
 
 #include "Tools/Write/AddGraphNodeTool.h"
 #include "Utils/McpAssetModifier.h"
+#include "Utils/McpPropertySerializer.h"
 #include "YesUeMcpEditor.h"
 #include "Engine/Blueprint.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialExpression.h"
-#include "Materials/MaterialExpressionConstant.h"
-#include "Materials/MaterialExpressionScalarParameter.h"
-#include "Materials/MaterialExpressionVectorParameter.h"
-#include "Materials/MaterialExpressionTextureSample.h"
-#include "Materials/MaterialExpressionAdd.h"
-#include "Materials/MaterialExpressionMultiply.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphNode.h"
+#include "K2Node.h"
 #include "K2Node_CallFunction.h"
 #include "K2Node_Event.h"
 #include "K2Node_VariableGet.h"
@@ -23,9 +19,10 @@
 
 FString UAddGraphNodeTool::GetToolDescription() const
 {
-	return TEXT("Add a node to a Blueprint or Material graph. For Blueprints, supports function calls and events. "
-		"For AnimBlueprints, also supports blend_stack, state_machine, and other animation graphs. "
-		"For Materials, supports expression nodes like Constant, ScalarParameter, Add, Multiply, etc.");
+	return TEXT("Add a node to a Blueprint or Material graph by class name. "
+		"For Materials: use expression class names like 'MaterialExpressionAdd', 'MaterialExpressionSceneTexture', 'MaterialExpressionCollectionParameter'. "
+		"For Blueprints: use node class names like 'K2Node_CallFunction', 'K2Node_VariableGet', 'K2Node_Event'. "
+		"Properties can be set via the 'properties' parameter.");
 }
 
 TMap<FString, FMcpSchemaProperty> UAddGraphNodeTool::GetInputSchema() const
@@ -40,8 +37,8 @@ TMap<FString, FMcpSchemaProperty> UAddGraphNodeTool::GetInputSchema() const
 
 	FMcpSchemaProperty NodeClass;
 	NodeClass.Type = TEXT("string");
-	NodeClass.Description = TEXT("Node class or type. For Blueprints: 'CallFunction', 'Event', 'VariableGet', 'VariableSet'. "
-		"For Materials: 'Constant', 'ScalarParameter', 'VectorParameter', 'TextureSample', 'Add', 'Multiply', etc.");
+	NodeClass.Description = TEXT("Node class name. For Materials: 'MaterialExpressionAdd', 'MaterialExpressionSceneTexture', etc. "
+		"For Blueprints: 'K2Node_CallFunction', 'K2Node_VariableGet', etc.");
 	NodeClass.bRequired = true;
 	Schema.Add(TEXT("node_class"), NodeClass);
 
@@ -51,24 +48,6 @@ TMap<FString, FMcpSchemaProperty> UAddGraphNodeTool::GetInputSchema() const
 	GraphName.bRequired = false;
 	Schema.Add(TEXT("graph_name"), GraphName);
 
-	FMcpSchemaProperty FunctionName;
-	FunctionName.Type = TEXT("string");
-	FunctionName.Description = TEXT("Function name (for CallFunction nodes)");
-	FunctionName.bRequired = false;
-	Schema.Add(TEXT("function_name"), FunctionName);
-
-	FMcpSchemaProperty VariableName;
-	VariableName.Type = TEXT("string");
-	VariableName.Description = TEXT("Variable name (for VariableGet/VariableSet nodes)");
-	VariableName.bRequired = false;
-	Schema.Add(TEXT("variable_name"), VariableName);
-
-	FMcpSchemaProperty ParameterName;
-	ParameterName.Type = TEXT("string");
-	ParameterName.Description = TEXT("Parameter name (for Material parameter nodes)");
-	ParameterName.bRequired = false;
-	Schema.Add(TEXT("parameter_name"), ParameterName);
-
 	FMcpSchemaProperty Position;
 	Position.Type = TEXT("array");
 	Position.ItemsType = TEXT("number");
@@ -76,11 +55,11 @@ TMap<FString, FMcpSchemaProperty> UAddGraphNodeTool::GetInputSchema() const
 	Position.bRequired = false;
 	Schema.Add(TEXT("position"), Position);
 
-	FMcpSchemaProperty Value;
-	Value.Type = TEXT("number");
-	Value.Description = TEXT("Default value (for Constant nodes)");
-	Value.bRequired = false;
-	Schema.Add(TEXT("value"), Value);
+	FMcpSchemaProperty Properties;
+	Properties.Type = TEXT("object");
+	Properties.Description = TEXT("Properties to set on the node after creation (e.g., {'ParameterName': 'MyParam', 'DefaultValue': 1.0})");
+	Properties.bRequired = false;
+	Schema.Add(TEXT("properties"), Properties);
 
 	return Schema;
 }
@@ -97,10 +76,6 @@ FMcpToolResult UAddGraphNodeTool::Execute(
 	FString AssetPath = GetStringArgOrDefault(Arguments, TEXT("asset_path"));
 	FString NodeClass = GetStringArgOrDefault(Arguments, TEXT("node_class"));
 	FString GraphName = GetStringArgOrDefault(Arguments, TEXT("graph_name"), TEXT("EventGraph"));
-	FString FunctionName = GetStringArgOrDefault(Arguments, TEXT("function_name"));
-	FString VariableName = GetStringArgOrDefault(Arguments, TEXT("variable_name"));
-	FString ParameterName = GetStringArgOrDefault(Arguments, TEXT("parameter_name"));
-	double Value = Arguments->HasField(TEXT("value")) ? Arguments->GetNumberField(TEXT("value")) : 0.0;
 
 	// Get position
 	FVector2D Position(0, 0);
@@ -109,6 +84,14 @@ FMcpToolResult UAddGraphNodeTool::Execute(
 	{
 		Position.X = (*PositionArray)[0]->AsNumber();
 		Position.Y = (*PositionArray)[1]->AsNumber();
+	}
+
+	// Get properties object
+	TSharedPtr<FJsonObject> Properties;
+	const TSharedPtr<FJsonObject>* PropertiesPtr;
+	if (Arguments->TryGetObjectField(TEXT("properties"), PropertiesPtr))
+	{
+		Properties = *PropertiesPtr;
 	}
 
 	if (AssetPath.IsEmpty() || NodeClass.IsEmpty())
@@ -139,65 +122,21 @@ FMcpToolResult UAddGraphNodeTool::Execute(
 	// Handle Material
 	if (UMaterial* Material = Cast<UMaterial>(Object))
 	{
-		FMcpAssetModifier::MarkModified(Material);
+		FString Error;
+		UMaterialExpression* Expression = CreateMaterialExpression(Material, NodeClass, Position, Properties, Error);
 
-		UMaterialExpression* Expression = nullptr;
-
-		// Create the appropriate expression type
-		if (NodeClass.Equals(TEXT("Constant"), ESearchCase::IgnoreCase))
+		if (!Expression)
 		{
-			UMaterialExpressionConstant* Const = NewObject<UMaterialExpressionConstant>(Material);
-			Const->R = Value;
-			Expression = Const;
-		}
-		else if (NodeClass.Equals(TEXT("ScalarParameter"), ESearchCase::IgnoreCase))
-		{
-			UMaterialExpressionScalarParameter* Param = NewObject<UMaterialExpressionScalarParameter>(Material);
-			Param->ParameterName = ParameterName.IsEmpty() ? FName(TEXT("ScalarParam")) : FName(*ParameterName);
-			Param->DefaultValue = Value;
-			Expression = Param;
-		}
-		else if (NodeClass.Equals(TEXT("VectorParameter"), ESearchCase::IgnoreCase))
-		{
-			UMaterialExpressionVectorParameter* Param = NewObject<UMaterialExpressionVectorParameter>(Material);
-			Param->ParameterName = ParameterName.IsEmpty() ? FName(TEXT("VectorParam")) : FName(*ParameterName);
-			Expression = Param;
-		}
-		else if (NodeClass.Equals(TEXT("TextureSample"), ESearchCase::IgnoreCase))
-		{
-			UMaterialExpressionTextureSample* TexSample = NewObject<UMaterialExpressionTextureSample>(Material);
-			Expression = TexSample;
-		}
-		else if (NodeClass.Equals(TEXT("Add"), ESearchCase::IgnoreCase))
-		{
-			Expression = NewObject<UMaterialExpressionAdd>(Material);
-		}
-		else if (NodeClass.Equals(TEXT("Multiply"), ESearchCase::IgnoreCase))
-		{
-			Expression = NewObject<UMaterialExpressionMultiply>(Material);
-		}
-		else
-		{
-			return FMcpToolResult::Error(FString::Printf(TEXT("Unknown material expression type: %s"), *NodeClass));
+			return FMcpToolResult::Error(Error);
 		}
 
-		if (Expression)
-		{
-			Expression->MaterialExpressionEditorX = Position.X;
-			Expression->MaterialExpressionEditorY = Position.Y;
+		Result->SetBoolField(TEXT("success"), true);
+		Result->SetStringField(TEXT("expression_name"), Expression->GetName());
+		Result->SetStringField(TEXT("expression_class"), Expression->GetClass()->GetName());
+		Result->SetBoolField(TEXT("needs_save"), true);
 
-			Material->GetExpressionCollection().AddExpression(Expression);
-			Material->PreEditChange(nullptr);
-			Material->PostEditChange();
-
-			FMcpAssetModifier::MarkPackageDirty(Material);
-
-			Result->SetBoolField(TEXT("success"), true);
-			Result->SetStringField(TEXT("expression_name"), Expression->GetName());
-			Result->SetBoolField(TEXT("needs_save"), true);
-
-			UE_LOG(LogYesUeMcp, Log, TEXT("add-graph-node: Added material expression %s"), *Expression->GetName());
-		}
+		UE_LOG(LogYesUeMcp, Log, TEXT("add-graph-node: Added material expression %s (%s)"),
+			*Expression->GetName(), *Expression->GetClass()->GetName());
 
 		return FMcpToolResult::Json(Result);
 	}
@@ -205,104 +144,233 @@ FMcpToolResult UAddGraphNodeTool::Execute(
 	// Handle Blueprint
 	if (UBlueprint* Blueprint = Cast<UBlueprint>(Object))
 	{
-		FMcpAssetModifier::MarkModified(Blueprint);
-
-		// Find the target graph using shared helper (supports AnimBlueprint graphs)
+		// Find the target graph
 		UEdGraph* TargetGraph = FMcpAssetModifier::FindGraphByName(Blueprint, GraphName);
-
 		if (!TargetGraph)
 		{
 			return FMcpToolResult::Error(FString::Printf(TEXT("Graph not found: %s"), *GraphName));
 		}
 
-		UEdGraphNode* NewNode = nullptr;
+		FString Error;
+		UEdGraphNode* NewNode = CreateBlueprintNode(Blueprint, TargetGraph, NodeClass, Position, Properties, Error);
 
-		if (NodeClass.Equals(TEXT("CallFunction"), ESearchCase::IgnoreCase))
+		if (!NewNode)
 		{
-			if (FunctionName.IsEmpty())
-			{
-				return FMcpToolResult::Error(TEXT("function_name is required for CallFunction nodes"));
-			}
-
-			// Find the function
-			UFunction* Function = FindFirstObject<UFunction>(*FunctionName, EFindFirstObjectOptions::None);
-			if (!Function)
-			{
-				// Try finding in common classes
-				Function = AActor::StaticClass()->FindFunctionByName(*FunctionName);
-				if (!Function)
-				{
-					Function = UObject::StaticClass()->FindFunctionByName(*FunctionName);
-				}
-			}
-
-			if (!Function)
-			{
-				return FMcpToolResult::Error(FString::Printf(TEXT("Function not found: %s"), *FunctionName));
-			}
-
-			UK2Node_CallFunction* CallNode = NewObject<UK2Node_CallFunction>(TargetGraph);
-			CallNode->CreateNewGuid();
-			CallNode->SetFromFunction(Function);
-			CallNode->NodePosX = Position.X;
-			CallNode->NodePosY = Position.Y;
-			CallNode->AllocateDefaultPins();
-			TargetGraph->AddNode(CallNode, true, false);
-			NewNode = CallNode;
-		}
-		else if (NodeClass.Equals(TEXT("VariableGet"), ESearchCase::IgnoreCase))
-		{
-			if (VariableName.IsEmpty())
-			{
-				return FMcpToolResult::Error(TEXT("variable_name is required for VariableGet nodes"));
-			}
-
-			UK2Node_VariableGet* GetNode = NewObject<UK2Node_VariableGet>(TargetGraph);
-			GetNode->CreateNewGuid();
-			GetNode->VariableReference.SetSelfMember(FName(*VariableName));
-			GetNode->NodePosX = Position.X;
-			GetNode->NodePosY = Position.Y;
-			GetNode->AllocateDefaultPins();
-			TargetGraph->AddNode(GetNode, true, false);
-			NewNode = GetNode;
-		}
-		else if (NodeClass.Equals(TEXT("VariableSet"), ESearchCase::IgnoreCase))
-		{
-			if (VariableName.IsEmpty())
-			{
-				return FMcpToolResult::Error(TEXT("variable_name is required for VariableSet nodes"));
-			}
-
-			UK2Node_VariableSet* SetNode = NewObject<UK2Node_VariableSet>(TargetGraph);
-			SetNode->CreateNewGuid();
-			SetNode->VariableReference.SetSelfMember(FName(*VariableName));
-			SetNode->NodePosX = Position.X;
-			SetNode->NodePosY = Position.Y;
-			SetNode->AllocateDefaultPins();
-			TargetGraph->AddNode(SetNode, true, false);
-			NewNode = SetNode;
-		}
-		else
-		{
-			return FMcpToolResult::Error(FString::Printf(TEXT("Unknown Blueprint node class: %s"), *NodeClass));
+			return FMcpToolResult::Error(Error);
 		}
 
-		if (NewNode)
-		{
-			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
-			FMcpAssetModifier::MarkPackageDirty(Blueprint);
+		Result->SetBoolField(TEXT("success"), true);
+		Result->SetStringField(TEXT("node_guid"), NewNode->NodeGuid.ToString());
+		Result->SetStringField(TEXT("node_class"), NewNode->GetClass()->GetName());
+		Result->SetStringField(TEXT("graph"), GraphName);
+		Result->SetBoolField(TEXT("needs_compile"), true);
+		Result->SetBoolField(TEXT("needs_save"), true);
 
-			Result->SetBoolField(TEXT("success"), true);
-			Result->SetStringField(TEXT("node_guid"), NewNode->NodeGuid.ToString());
-			Result->SetStringField(TEXT("graph"), GraphName);
-			Result->SetBoolField(TEXT("needs_compile"), true);
-			Result->SetBoolField(TEXT("needs_save"), true);
-
-			UE_LOG(LogYesUeMcp, Log, TEXT("add-graph-node: Added Blueprint node %s"), *NewNode->NodeGuid.ToString());
-		}
+		UE_LOG(LogYesUeMcp, Log, TEXT("add-graph-node: Added Blueprint node %s (%s)"),
+			*NewNode->NodeGuid.ToString(), *NewNode->GetClass()->GetName());
 
 		return FMcpToolResult::Json(Result);
 	}
 
 	return FMcpToolResult::Error(TEXT("Asset must be a Blueprint or Material"));
+}
+
+UMaterialExpression* UAddGraphNodeTool::CreateMaterialExpression(
+	UMaterial* Material,
+	const FString& NodeClassName,
+	const FVector2D& Position,
+	const TSharedPtr<FJsonObject>& Properties,
+	FString& OutError)
+{
+	// Resolve the expression class
+	FString ClassError;
+	UClass* ExpressionClass = nullptr;
+
+	// Try to find the class directly
+	ExpressionClass = FMcpPropertySerializer::ResolveClass(NodeClassName, ClassError);
+
+	// If not found, try with UMaterialExpression prefix
+	if (!ExpressionClass && !NodeClassName.StartsWith(TEXT("MaterialExpression")))
+	{
+		FString PrefixedName = TEXT("MaterialExpression") + NodeClassName;
+		ExpressionClass = FMcpPropertySerializer::ResolveClass(PrefixedName, ClassError);
+	}
+
+	// Also try with U prefix
+	if (!ExpressionClass && !NodeClassName.StartsWith(TEXT("U")))
+	{
+		FString UPrefixedName = TEXT("U") + NodeClassName;
+		ExpressionClass = FMcpPropertySerializer::ResolveClass(UPrefixedName, ClassError);
+	}
+
+	if (!ExpressionClass)
+	{
+		OutError = FString::Printf(TEXT("Material expression class not found: %s. Try 'MaterialExpressionAdd', 'MaterialExpressionSceneTexture', etc."), *NodeClassName);
+		return nullptr;
+	}
+
+	// Validate it's a material expression
+	if (!ExpressionClass->IsChildOf<UMaterialExpression>())
+	{
+		OutError = FString::Printf(TEXT("Class '%s' is not a UMaterialExpression subclass"), *NodeClassName);
+		return nullptr;
+	}
+
+	FMcpAssetModifier::MarkModified(Material);
+
+	// Create the expression
+	UMaterialExpression* Expression = NewObject<UMaterialExpression>(Material, ExpressionClass, NAME_None, RF_Transactional);
+	if (!Expression)
+	{
+		OutError = FString::Printf(TEXT("Failed to create expression of class %s"), *ExpressionClass->GetName());
+		return nullptr;
+	}
+
+	// Set position
+	Expression->MaterialExpressionEditorX = Position.X;
+	Expression->MaterialExpressionEditorY = Position.Y;
+
+	// Apply properties if provided
+	if (Properties.IsValid())
+	{
+		ApplyNodeProperties(Expression, Properties);
+	}
+
+	// Add to material
+	Material->GetExpressionCollection().AddExpression(Expression);
+	Material->PreEditChange(nullptr);
+	Material->PostEditChange();
+
+	FMcpAssetModifier::MarkPackageDirty(Material);
+
+	return Expression;
+}
+
+UEdGraphNode* UAddGraphNodeTool::CreateBlueprintNode(
+	UBlueprint* Blueprint,
+	UEdGraph* Graph,
+	const FString& NodeClassName,
+	const FVector2D& Position,
+	const TSharedPtr<FJsonObject>& Properties,
+	FString& OutError)
+{
+	// Resolve the node class
+	FString ClassError;
+	UClass* NodeClass = nullptr;
+
+	// Try to find the class directly
+	NodeClass = FMcpPropertySerializer::ResolveClass(NodeClassName, ClassError);
+
+	// If not found, try with UK2Node_ prefix
+	if (!NodeClass && !NodeClassName.StartsWith(TEXT("K2Node")))
+	{
+		FString PrefixedName = TEXT("K2Node_") + NodeClassName;
+		NodeClass = FMcpPropertySerializer::ResolveClass(PrefixedName, ClassError);
+
+		// Also try UK2Node_ prefix
+		if (!NodeClass)
+		{
+			PrefixedName = TEXT("UK2Node_") + NodeClassName;
+			NodeClass = FMcpPropertySerializer::ResolveClass(PrefixedName, ClassError);
+		}
+	}
+
+	if (!NodeClass)
+	{
+		OutError = FString::Printf(TEXT("Blueprint node class not found: %s. Try 'K2Node_CallFunction', 'K2Node_VariableGet', etc."), *NodeClassName);
+		return nullptr;
+	}
+
+	// Validate it's a graph node
+	if (!NodeClass->IsChildOf<UEdGraphNode>())
+	{
+		OutError = FString::Printf(TEXT("Class '%s' is not a UEdGraphNode subclass"), *NodeClassName);
+		return nullptr;
+	}
+
+	FMcpAssetModifier::MarkModified(Blueprint);
+
+	// Create the node
+	UEdGraphNode* NewNode = NewObject<UEdGraphNode>(Graph, NodeClass, NAME_None, RF_Transactional);
+	if (!NewNode)
+	{
+		OutError = FString::Printf(TEXT("Failed to create node of class %s"), *NodeClass->GetName());
+		return nullptr;
+	}
+
+	// Initialize node
+	NewNode->CreateNewGuid();
+	NewNode->NodePosX = Position.X;
+	NewNode->NodePosY = Position.Y;
+
+	// Apply properties if provided
+	if (Properties.IsValid())
+	{
+		ApplyNodeProperties(NewNode, Properties);
+	}
+
+	// Special handling for certain node types that need extra setup
+	if (UK2Node* K2Node = Cast<UK2Node>(NewNode))
+	{
+		// For CallFunction nodes, try to set up the function reference from properties
+		if (UK2Node_CallFunction* CallNode = Cast<UK2Node_CallFunction>(NewNode))
+		{
+			// Function setup is handled via properties (FunctionReference.MemberName)
+		}
+		else if (UK2Node_VariableGet* GetNode = Cast<UK2Node_VariableGet>(NewNode))
+		{
+			// Variable reference setup is handled via properties
+		}
+		else if (UK2Node_VariableSet* SetNode = Cast<UK2Node_VariableSet>(NewNode))
+		{
+			// Variable reference setup is handled via properties
+		}
+
+		// Allocate default pins
+		K2Node->AllocateDefaultPins();
+	}
+
+	// Add to graph
+	Graph->AddNode(NewNode, true, false);
+
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+	FMcpAssetModifier::MarkPackageDirty(Blueprint);
+
+	return NewNode;
+}
+
+void UAddGraphNodeTool::ApplyNodeProperties(UObject* Node, const TSharedPtr<FJsonObject>& Properties)
+{
+	if (!Node || !Properties.IsValid())
+	{
+		return;
+	}
+
+	for (const auto& Pair : Properties->Values)
+	{
+		const FString& PropertyName = Pair.Key;
+		const TSharedPtr<FJsonValue>& Value = Pair.Value;
+
+		// Find the property - first try direct lookup
+		FProperty* Property = Node->GetClass()->FindPropertyByName(*PropertyName);
+		void* Container = Node;
+
+		if (!Property)
+		{
+			// Try nested property path
+			FString FindError;
+			if (!FMcpAssetModifier::FindPropertyByPath(Node, PropertyName, Property, Container, FindError))
+			{
+				UE_LOG(LogYesUeMcp, Warning, TEXT("Property not found: %s - %s"), *PropertyName, *FindError);
+				continue;
+			}
+		}
+
+		// Set the property value
+		FString SetError;
+		if (!FMcpPropertySerializer::DeserializePropertyValue(Property, Container, Value, SetError))
+		{
+			UE_LOG(LogYesUeMcp, Warning, TEXT("Failed to set property %s: %s"), *PropertyName, *SetError);
+		}
+	}
 }

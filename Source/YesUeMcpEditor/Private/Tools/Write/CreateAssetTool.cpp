@@ -2,21 +2,23 @@
 
 #include "Tools/Write/CreateAssetTool.h"
 #include "Utils/McpAssetModifier.h"
+#include "Utils/McpPropertySerializer.h"
 #include "YesUeMcpEditor.h"
 #include "AssetToolsModule.h"
 #include "IAssetTools.h"
+#include "Factories/Factory.h"
 #include "Factories/BlueprintFactory.h"
 #include "Factories/MaterialFactoryNew.h"
 #include "Factories/DataTableFactory.h"
 #include "Factories/WorldFactory.h"
 #include "Engine/Blueprint.h"
 #include "Engine/DataTable.h"
+#include "Engine/DataAsset.h"
 #include "Materials/Material.h"
 #include "UObject/SavePackage.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Kismet2/KismetEditorUtilities.h"
-#include "GameFramework/Character.h"
-#include "GameFramework/GameModeBase.h"
+#include "GameFramework/Actor.h"
 #include "ScopedTransaction.h"
 #include "WidgetBlueprint.h"
 #include "Blueprint/UserWidget.h"
@@ -26,7 +28,8 @@
 
 FString UCreateAssetTool::GetToolDescription() const
 {
-	return TEXT("Create a new asset. Supports Blueprint, Material, DataTable, Level, and more.");
+	return TEXT("Create a new asset by class name. Supports any UObject type including Blueprint, Material, DataTable, DataAsset, etc. "
+		"Use full class names (e.g., 'Blueprint', 'Material', 'DataAsset') or Blueprint class paths.");
 }
 
 TMap<FString, FMcpSchemaProperty> UCreateAssetTool::GetInputSchema() const
@@ -41,19 +44,20 @@ TMap<FString, FMcpSchemaProperty> UCreateAssetTool::GetInputSchema() const
 
 	FMcpSchemaProperty AssetClass;
 	AssetClass.Type = TEXT("string");
-	AssetClass.Description = TEXT("Asset type: 'Blueprint', 'Material', 'DataTable', 'Level', 'WidgetBlueprint', 'AnimBlueprint'");
+	AssetClass.Description = TEXT("Asset class name. Examples: 'Blueprint', 'Material', 'DataTable', 'DataAsset', 'WidgetBlueprint', 'AnimBlueprint', "
+		"or Blueprint class paths like '/Game/MyDataAsset.MyDataAsset_C'");
 	AssetClass.bRequired = true;
 	Schema.Add(TEXT("asset_class"), AssetClass);
 
 	FMcpSchemaProperty ParentClass;
 	ParentClass.Type = TEXT("string");
-	ParentClass.Description = TEXT("Parent class for Blueprints (e.g., 'Actor', 'Character', 'Pawn'). For AnimBlueprint, specify skeleton asset path. Default: 'Actor'");
+	ParentClass.Description = TEXT("Parent class for Blueprints (e.g., 'Actor', 'Character'). For AnimBlueprint, specify skeleton asset path.");
 	ParentClass.bRequired = false;
 	Schema.Add(TEXT("parent_class"), ParentClass);
 
 	FMcpSchemaProperty RowStruct;
 	RowStruct.Type = TEXT("string");
-	RowStruct.Description = TEXT("Row struct path for DataTables (e.g., '/Script/Engine.DataTableRowHandle')");
+	RowStruct.Description = TEXT("Row struct path for DataTables");
 	RowStruct.bRequired = false;
 	Schema.Add(TEXT("row_struct"), RowStruct);
 
@@ -71,7 +75,7 @@ FMcpToolResult UCreateAssetTool::Execute(
 {
 	FString AssetPath = GetStringArgOrDefault(Arguments, TEXT("asset_path"));
 	FString AssetClass = GetStringArgOrDefault(Arguments, TEXT("asset_class"));
-	FString ParentClass = GetStringArgOrDefault(Arguments, TEXT("parent_class"), TEXT("Actor"));
+	FString ParentClass = GetStringArgOrDefault(Arguments, TEXT("parent_class"));
 	FString RowStruct = GetStringArgOrDefault(Arguments, TEXT("row_struct"));
 
 	if (AssetPath.IsEmpty() || AssetClass.IsEmpty())
@@ -92,7 +96,7 @@ FMcpToolResult UCreateAssetTool::Execute(
 		return FMcpToolResult::Error(FString::Printf(TEXT("Asset already exists: %s"), *AssetPath));
 	}
 
-	UE_LOG(LogYesUeMcp, Log, TEXT("create-asset: %s of type %s"), *AssetPath, *AssetClass);
+	UE_LOG(LogYesUeMcp, Log, TEXT("create-asset: %s of class %s"), *AssetPath, *AssetClass);
 
 	// Extract package path and asset name
 	FString PackagePath = FPackageName::GetLongPackagePath(AssetPath);
@@ -110,145 +114,24 @@ FMcpToolResult UCreateAssetTool::Execute(
 
 	UObject* CreatedAsset = nullptr;
 
-	// Create Blueprint
-	if (AssetClass.Equals(TEXT("Blueprint"), ESearchCase::IgnoreCase))
+	// Resolve the asset class
+	FString ClassError;
+	UClass* ResolvedClass = FMcpPropertySerializer::ResolveClass(AssetClass, ClassError);
+
+	// Special handling for known asset types that need factories
+	if (ResolvedClass)
 	{
-		// Find parent class
-		UClass* ParentUClass = nullptr;
-
-		if (ParentClass.Equals(TEXT("Actor"), ESearchCase::IgnoreCase))
-		{
-			ParentUClass = AActor::StaticClass();
-		}
-		else if (ParentClass.Equals(TEXT("Character"), ESearchCase::IgnoreCase))
-		{
-			ParentUClass = ACharacter::StaticClass();
-		}
-		else if (ParentClass.Equals(TEXT("Pawn"), ESearchCase::IgnoreCase))
-		{
-			ParentUClass = APawn::StaticClass();
-		}
-		else if (ParentClass.Equals(TEXT("PlayerController"), ESearchCase::IgnoreCase))
-		{
-			ParentUClass = APlayerController::StaticClass();
-		}
-		else if (ParentClass.Equals(TEXT("GameModeBase"), ESearchCase::IgnoreCase))
-		{
-			ParentUClass = AGameModeBase::StaticClass();
-		}
-		else
-		{
-			// Try to find the class
-			ParentUClass = FindFirstObject<UClass>(*ParentClass, EFindFirstObjectOptions::ExactClass);
-			if (!ParentUClass)
-			{
-				ParentUClass = AActor::StaticClass();
-			}
-		}
-
-		UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
-		Factory->ParentClass = ParentUClass;
-
-		CreatedAsset = AssetTools.CreateAsset(AssetName, PackagePath, UBlueprint::StaticClass(), Factory);
-
-		if (CreatedAsset)
-		{
-			Result->SetStringField(TEXT("parent_class"), ParentUClass->GetName());
-		}
-	}
-	// Create Material
-	else if (AssetClass.Equals(TEXT("Material"), ESearchCase::IgnoreCase))
-	{
-		UMaterialFactoryNew* Factory = NewObject<UMaterialFactoryNew>();
-		CreatedAsset = AssetTools.CreateAsset(AssetName, PackagePath, UMaterial::StaticClass(), Factory);
-	}
-	// Create DataTable
-	else if (AssetClass.Equals(TEXT("DataTable"), ESearchCase::IgnoreCase))
-	{
-		UDataTableFactory* Factory = NewObject<UDataTableFactory>();
-
-		// Find row struct
-		if (!RowStruct.IsEmpty())
-		{
-			UScriptStruct* Struct = FindFirstObject<UScriptStruct>(*RowStruct, EFindFirstObjectOptions::ExactClass);
-			if (Struct)
-			{
-				Factory->Struct = Struct;
-			}
-		}
-
-		CreatedAsset = AssetTools.CreateAsset(AssetName, PackagePath, UDataTable::StaticClass(), Factory);
-	}
-	// Create Level
-	else if (AssetClass.Equals(TEXT("Level"), ESearchCase::IgnoreCase) ||
-	         AssetClass.Equals(TEXT("Map"), ESearchCase::IgnoreCase))
-	{
-		UWorldFactory* Factory = NewObject<UWorldFactory>();
-		Factory->WorldType = EWorldType::Editor;
-		CreatedAsset = AssetTools.CreateAsset(AssetName, PackagePath, UWorld::StaticClass(), Factory);
-	}
-	// Create WidgetBlueprint
-	else if (AssetClass.Equals(TEXT("WidgetBlueprint"), ESearchCase::IgnoreCase) ||
-	         AssetClass.Equals(TEXT("Widget"), ESearchCase::IgnoreCase) ||
-	         AssetClass.Equals(TEXT("UserWidget"), ESearchCase::IgnoreCase))
-	{
-		UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
-		Factory->ParentClass = UUserWidget::StaticClass();
-
-		CreatedAsset = AssetTools.CreateAsset(AssetName, PackagePath, UBlueprint::StaticClass(), Factory);
-	}
-	// Create AnimBlueprint
-	else if (AssetClass.Equals(TEXT("AnimBlueprint"), ESearchCase::IgnoreCase) ||
-	         AssetClass.Equals(TEXT("AnimBP"), ESearchCase::IgnoreCase))
-	{
-		// AnimBlueprint requires a skeleton - try to find one or return error
-		USkeleton* TargetSkeleton = nullptr;
-
-		// First try to find a skeleton if specified in parent_class (reusing the parameter)
-		if (!ParentClass.Equals(TEXT("Actor"), ESearchCase::IgnoreCase) && !ParentClass.IsEmpty())
-		{
-			TargetSkeleton = LoadObject<USkeleton>(nullptr, *ParentClass);
-		}
-
-		// If no skeleton specified, try to find any skeleton in the project
-		if (!TargetSkeleton)
-		{
-			FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-			TArray<FAssetData> SkeletonAssets;
-			AssetRegistryModule.Get().GetAssetsByClass(USkeleton::StaticClass()->GetClassPathName(), SkeletonAssets);
-
-			if (SkeletonAssets.Num() > 0)
-			{
-				TargetSkeleton = Cast<USkeleton>(SkeletonAssets[0].GetAsset());
-			}
-		}
-
-		if (!TargetSkeleton)
-		{
-			return FMcpToolResult::Error(TEXT("AnimBlueprint requires a skeleton. No skeleton found in project. Specify skeleton path in parent_class parameter."));
-		}
-
-		CreatedAsset = FKismetEditorUtilities::CreateBlueprint(
-			UAnimInstance::StaticClass(),
-			CreatePackage(*AssetPath),
-			*AssetName,
-			BPTYPE_Normal,
-			UAnimBlueprint::StaticClass(),
-			UBlueprintGeneratedClass::StaticClass());
-
-		if (UAnimBlueprint* AnimBP = Cast<UAnimBlueprint>(CreatedAsset))
-		{
-			AnimBP->TargetSkeleton = TargetSkeleton;
-		}
+		CreatedAsset = CreateAssetOfClass(ResolvedClass, AssetPath, PackagePath, AssetName, ParentClass, RowStruct, AssetTools, Result, ClassError);
 	}
 	else
 	{
-		return FMcpToolResult::Error(FString::Printf(TEXT("Unsupported asset class: %s. Supported: Blueprint, Material, DataTable, Level, WidgetBlueprint, AnimBlueprint"), *AssetClass));
+		// Try special names that don't directly map to classes
+		CreatedAsset = CreateAssetByName(AssetClass, AssetPath, PackagePath, AssetName, ParentClass, RowStruct, AssetTools, Result, ClassError);
 	}
 
 	if (!CreatedAsset)
 	{
-		return FMcpToolResult::Error(TEXT("Failed to create asset"));
+		return FMcpToolResult::Error(ClassError.IsEmpty() ? TEXT("Failed to create asset") : ClassError);
 	}
 
 	// Mark dirty and register
@@ -256,9 +139,370 @@ FMcpToolResult UCreateAssetTool::Execute(
 	FAssetRegistryModule::AssetCreated(CreatedAsset);
 
 	Result->SetBoolField(TEXT("success"), true);
+	Result->SetStringField(TEXT("created_class"), CreatedAsset->GetClass()->GetName());
 	Result->SetBoolField(TEXT("needs_save"), true);
 
-	UE_LOG(LogYesUeMcp, Log, TEXT("create-asset: Successfully created %s"), *AssetPath);
+	UE_LOG(LogYesUeMcp, Log, TEXT("create-asset: Successfully created %s of class %s"), *AssetPath, *CreatedAsset->GetClass()->GetName());
 
 	return FMcpToolResult::Json(Result);
+}
+
+UObject* UCreateAssetTool::CreateAssetOfClass(
+	UClass* AssetClass,
+	const FString& AssetPath,
+	const FString& PackagePath,
+	const FString& AssetName,
+	const FString& ParentClass,
+	const FString& RowStruct,
+	IAssetTools& AssetTools,
+	TSharedPtr<FJsonObject>& Result,
+	FString& OutError)
+{
+	// Blueprint
+	if (AssetClass->IsChildOf<UBlueprint>() || AssetClass == UBlueprint::StaticClass())
+	{
+		return CreateBlueprint(PackagePath, AssetName, ParentClass, AssetTools, Result, OutError);
+	}
+
+	// AnimBlueprint
+	if (AssetClass->IsChildOf<UAnimBlueprint>() || AssetClass == UAnimBlueprint::StaticClass())
+	{
+		return CreateAnimBlueprint(AssetPath, AssetName, ParentClass, Result, OutError);
+	}
+
+	// WidgetBlueprint
+	if (AssetClass->IsChildOf<UWidgetBlueprint>() || AssetClass == UWidgetBlueprint::StaticClass())
+	{
+		return CreateWidgetBlueprint(PackagePath, AssetName, AssetTools, Result, OutError);
+	}
+
+	// Material
+	if (AssetClass->IsChildOf<UMaterial>() || AssetClass == UMaterial::StaticClass())
+	{
+		return CreateMaterial(PackagePath, AssetName, AssetTools, OutError);
+	}
+
+	// DataTable
+	if (AssetClass->IsChildOf<UDataTable>() || AssetClass == UDataTable::StaticClass())
+	{
+		return CreateDataTable(PackagePath, AssetName, RowStruct, AssetTools, OutError);
+	}
+
+	// World/Level
+	if (AssetClass->IsChildOf<UWorld>() || AssetClass == UWorld::StaticClass())
+	{
+		return CreateLevel(PackagePath, AssetName, AssetTools, OutError);
+	}
+
+	// DataAsset and subclasses - use direct instantiation
+	if (AssetClass->IsChildOf<UDataAsset>())
+	{
+		return CreateDataAsset(AssetPath, AssetName, AssetClass, OutError);
+	}
+
+	// Generic UObject - try to find a factory or use direct instantiation
+	return CreateGenericAsset(AssetPath, AssetName, AssetClass, AssetTools, OutError);
+}
+
+UObject* UCreateAssetTool::CreateAssetByName(
+	const FString& AssetClassName,
+	const FString& AssetPath,
+	const FString& PackagePath,
+	const FString& AssetName,
+	const FString& ParentClass,
+	const FString& RowStruct,
+	IAssetTools& AssetTools,
+	TSharedPtr<FJsonObject>& Result,
+	FString& OutError)
+{
+	// Handle string names that don't directly map to class names
+	FString LowerName = AssetClassName.ToLower();
+
+	if (LowerName == TEXT("blueprint"))
+	{
+		return CreateBlueprint(PackagePath, AssetName, ParentClass, AssetTools, Result, OutError);
+	}
+
+	if (LowerName == TEXT("material"))
+	{
+		return CreateMaterial(PackagePath, AssetName, AssetTools, OutError);
+	}
+
+	if (LowerName == TEXT("datatable"))
+	{
+		return CreateDataTable(PackagePath, AssetName, RowStruct, AssetTools, OutError);
+	}
+
+	if (LowerName == TEXT("level") || LowerName == TEXT("map") || LowerName == TEXT("world"))
+	{
+		return CreateLevel(PackagePath, AssetName, AssetTools, OutError);
+	}
+
+	if (LowerName == TEXT("widgetblueprint") || LowerName == TEXT("widget") || LowerName == TEXT("userwidget"))
+	{
+		return CreateWidgetBlueprint(PackagePath, AssetName, AssetTools, Result, OutError);
+	}
+
+	if (LowerName == TEXT("animblueprint") || LowerName == TEXT("animbp"))
+	{
+		return CreateAnimBlueprint(AssetPath, AssetName, ParentClass, Result, OutError);
+	}
+
+	if (LowerName == TEXT("dataasset"))
+	{
+		return CreateDataAsset(AssetPath, AssetName, UDataAsset::StaticClass(), OutError);
+	}
+
+	OutError = FString::Printf(TEXT("Unknown asset class: %s. Use class names like 'Blueprint', 'Material', 'DataAsset', or full class paths."), *AssetClassName);
+	return nullptr;
+}
+
+UObject* UCreateAssetTool::CreateBlueprint(
+	const FString& PackagePath,
+	const FString& AssetName,
+	const FString& ParentClassName,
+	IAssetTools& AssetTools,
+	TSharedPtr<FJsonObject>& Result,
+	FString& OutError)
+{
+	// Resolve parent class
+	UClass* ParentUClass = AActor::StaticClass(); // Default
+
+	if (!ParentClassName.IsEmpty())
+	{
+		FString ClassError;
+		UClass* ResolvedParent = FMcpPropertySerializer::ResolveClass(ParentClassName, ClassError);
+		if (ResolvedParent)
+		{
+			ParentUClass = ResolvedParent;
+		}
+	}
+
+	UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
+	Factory->ParentClass = ParentUClass;
+
+	UObject* CreatedAsset = AssetTools.CreateAsset(AssetName, PackagePath, UBlueprint::StaticClass(), Factory);
+
+	if (CreatedAsset)
+	{
+		Result->SetStringField(TEXT("parent_class"), ParentUClass->GetName());
+	}
+	else
+	{
+		OutError = TEXT("Failed to create Blueprint");
+	}
+
+	return CreatedAsset;
+}
+
+UObject* UCreateAssetTool::CreateMaterial(
+	const FString& PackagePath,
+	const FString& AssetName,
+	IAssetTools& AssetTools,
+	FString& OutError)
+{
+	UMaterialFactoryNew* Factory = NewObject<UMaterialFactoryNew>();
+	UObject* CreatedAsset = AssetTools.CreateAsset(AssetName, PackagePath, UMaterial::StaticClass(), Factory);
+
+	if (!CreatedAsset)
+	{
+		OutError = TEXT("Failed to create Material");
+	}
+
+	return CreatedAsset;
+}
+
+UObject* UCreateAssetTool::CreateDataTable(
+	const FString& PackagePath,
+	const FString& AssetName,
+	const FString& RowStruct,
+	IAssetTools& AssetTools,
+	FString& OutError)
+{
+	UDataTableFactory* Factory = NewObject<UDataTableFactory>();
+
+	if (!RowStruct.IsEmpty())
+	{
+		UScriptStruct* Struct = FindFirstObject<UScriptStruct>(*RowStruct, EFindFirstObjectOptions::ExactClass);
+		if (Struct)
+		{
+			Factory->Struct = Struct;
+		}
+	}
+
+	UObject* CreatedAsset = AssetTools.CreateAsset(AssetName, PackagePath, UDataTable::StaticClass(), Factory);
+
+	if (!CreatedAsset)
+	{
+		OutError = TEXT("Failed to create DataTable");
+	}
+
+	return CreatedAsset;
+}
+
+UObject* UCreateAssetTool::CreateLevel(
+	const FString& PackagePath,
+	const FString& AssetName,
+	IAssetTools& AssetTools,
+	FString& OutError)
+{
+	UWorldFactory* Factory = NewObject<UWorldFactory>();
+	Factory->WorldType = EWorldType::Editor;
+
+	UObject* CreatedAsset = AssetTools.CreateAsset(AssetName, PackagePath, UWorld::StaticClass(), Factory);
+
+	if (!CreatedAsset)
+	{
+		OutError = TEXT("Failed to create Level");
+	}
+
+	return CreatedAsset;
+}
+
+UObject* UCreateAssetTool::CreateWidgetBlueprint(
+	const FString& PackagePath,
+	const FString& AssetName,
+	IAssetTools& AssetTools,
+	TSharedPtr<FJsonObject>& Result,
+	FString& OutError)
+{
+	UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
+	Factory->ParentClass = UUserWidget::StaticClass();
+
+	UObject* CreatedAsset = AssetTools.CreateAsset(AssetName, PackagePath, UBlueprint::StaticClass(), Factory);
+
+	if (CreatedAsset)
+	{
+		Result->SetStringField(TEXT("parent_class"), TEXT("UserWidget"));
+	}
+	else
+	{
+		OutError = TEXT("Failed to create WidgetBlueprint");
+	}
+
+	return CreatedAsset;
+}
+
+UObject* UCreateAssetTool::CreateAnimBlueprint(
+	const FString& AssetPath,
+	const FString& AssetName,
+	const FString& SkeletonPath,
+	TSharedPtr<FJsonObject>& Result,
+	FString& OutError)
+{
+	USkeleton* TargetSkeleton = nullptr;
+
+	// Try to load skeleton from path
+	if (!SkeletonPath.IsEmpty())
+	{
+		TargetSkeleton = LoadObject<USkeleton>(nullptr, *SkeletonPath);
+	}
+
+	// If no skeleton specified, try to find any skeleton in the project
+	if (!TargetSkeleton)
+	{
+		FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+		TArray<FAssetData> SkeletonAssets;
+		AssetRegistryModule.Get().GetAssetsByClass(USkeleton::StaticClass()->GetClassPathName(), SkeletonAssets);
+
+		if (SkeletonAssets.Num() > 0)
+		{
+			TargetSkeleton = Cast<USkeleton>(SkeletonAssets[0].GetAsset());
+		}
+	}
+
+	if (!TargetSkeleton)
+	{
+		OutError = TEXT("AnimBlueprint requires a skeleton. No skeleton found. Specify skeleton path in parent_class parameter.");
+		return nullptr;
+	}
+
+	UObject* CreatedAsset = FKismetEditorUtilities::CreateBlueprint(
+		UAnimInstance::StaticClass(),
+		CreatePackage(*AssetPath),
+		*AssetName,
+		BPTYPE_Normal,
+		UAnimBlueprint::StaticClass(),
+		UBlueprintGeneratedClass::StaticClass());
+
+	if (UAnimBlueprint* AnimBP = Cast<UAnimBlueprint>(CreatedAsset))
+	{
+		AnimBP->TargetSkeleton = TargetSkeleton;
+		Result->SetStringField(TEXT("skeleton"), TargetSkeleton->GetPathName());
+	}
+	else
+	{
+		OutError = TEXT("Failed to create AnimBlueprint");
+	}
+
+	return CreatedAsset;
+}
+
+UObject* UCreateAssetTool::CreateDataAsset(
+	const FString& AssetPath,
+	const FString& AssetName,
+	UClass* DataAssetClass,
+	FString& OutError)
+{
+	// Direct instantiation for DataAsset and subclasses
+	UPackage* Package = CreatePackage(*AssetPath);
+	if (!Package)
+	{
+		OutError = TEXT("Failed to create package");
+		return nullptr;
+	}
+
+	UDataAsset* NewAsset = NewObject<UDataAsset>(Package, DataAssetClass, *AssetName, RF_Public | RF_Standalone);
+	if (!NewAsset)
+	{
+		OutError = FString::Printf(TEXT("Failed to create DataAsset of class %s"), *DataAssetClass->GetName());
+		return nullptr;
+	}
+
+	return NewAsset;
+}
+
+UObject* UCreateAssetTool::CreateGenericAsset(
+	const FString& AssetPath,
+	const FString& AssetName,
+	UClass* AssetClass,
+	IAssetTools& AssetTools,
+	FString& OutError)
+{
+	// Try to find a factory for this class
+	TArray<UFactory*> Factories = AssetTools.GetNewAssetFactories();
+	UFactory* FoundFactory = nullptr;
+
+	for (UFactory* Factory : Factories)
+	{
+		if (Factory->SupportedClass == AssetClass ||
+			(Factory->SupportedClass && AssetClass->IsChildOf(Factory->SupportedClass)))
+		{
+			FoundFactory = Factory;
+			break;
+		}
+	}
+
+	if (FoundFactory)
+	{
+		FString PackagePath = FPackageName::GetLongPackagePath(AssetPath);
+		return AssetTools.CreateAsset(AssetName, PackagePath, AssetClass, FoundFactory);
+	}
+
+	// Fallback to direct instantiation
+	UPackage* Package = CreatePackage(*AssetPath);
+	if (!Package)
+	{
+		OutError = TEXT("Failed to create package");
+		return nullptr;
+	}
+
+	UObject* NewAsset = NewObject<UObject>(Package, AssetClass, *AssetName, RF_Public | RF_Standalone);
+	if (!NewAsset)
+	{
+		OutError = FString::Printf(TEXT("Failed to create asset of class %s"), *AssetClass->GetName());
+		return nullptr;
+	}
+
+	return NewAsset;
 }

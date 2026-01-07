@@ -47,6 +47,7 @@
 
 // Build tools
 #include "Tools/Build/TriggerLiveCodingTool.h"
+#include "Tools/Build/BuildAndRelaunchTool.h"
 
 DEFINE_LOG_CATEGORY(LogYesUeMcpEditor);
 DEFINE_LOG_CATEGORY(LogYesUeMcp);
@@ -146,6 +147,7 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 
 	// Build tools
 	Registry.RegisterToolClass(UTriggerLiveCodingTool::StaticClass());
+	Registry.RegisterToolClass(UBuildAndRelaunchTool::StaticClass());
 
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("Registered %d MCP tools"), Registry.GetToolCount());
 }

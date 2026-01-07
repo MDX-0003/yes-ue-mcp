@@ -1,6 +1,7 @@
 // Copyright softdaddy-o 2024. All Rights Reserved.
 
 #include "Utils/McpAssetModifier.h"
+#include "Utils/McpPropertySerializer.h"
 #include "Engine/Blueprint.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Kismet2/BlueprintEditorUtils.h"
@@ -83,9 +84,20 @@ bool FMcpAssetModifier::SaveAsset(UObject* Object, bool bPromptUser, FString& Ou
 		Package->GetName(),
 		FPackageName::GetAssetPackageExtension());
 
+	// Check if the file exists and is read-only before attempting to save
+	if (IFileManager::Get().FileExists(*PackageFileName))
+	{
+		if (IFileManager::Get().IsReadOnly(*PackageFileName))
+		{
+			OutError = FString::Printf(TEXT("Cannot save '%s': file is read-only (check out from source control first)"), *PackageFileName);
+			return false;
+		}
+	}
+
 	FSavePackageArgs SaveArgs;
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-	SaveArgs.Error = GError;
+	// Don't use GError - it causes critical errors and crashes when save fails
+	SaveArgs.Error = nullptr;
 	SaveArgs.bWarnOfLongFilename = true;
 
 	FSavePackageResultStruct Result = UPackage::Save(Package, Object, *PackageFileName, SaveArgs);
@@ -95,7 +107,22 @@ bool FMcpAssetModifier::SaveAsset(UObject* Object, bool bPromptUser, FString& Ou
 		return true;
 	}
 
-	OutError = FString::Printf(TEXT("Failed to save asset: %s"), *PackageFileName);
+	// Provide more specific error messages based on result
+	switch (Result.Result)
+	{
+	case ESavePackageResult::Error:
+		OutError = FString::Printf(TEXT("Error saving asset: %s"), *PackageFileName);
+		break;
+	case ESavePackageResult::Canceled:
+		OutError = TEXT("Save was canceled");
+		break;
+	case ESavePackageResult::MissingFile:
+		OutError = FString::Printf(TEXT("Missing file: %s"), *PackageFileName);
+		break;
+	default:
+		OutError = FString::Printf(TEXT("Failed to save asset: %s (result: %d)"), *PackageFileName, static_cast<int32>(Result.Result));
+		break;
+	}
 	return false;
 }
 
@@ -334,168 +361,9 @@ bool FMcpAssetModifier::SetPropertyFromJson(
 	const TSharedPtr<FJsonValue>& Value,
 	FString& OutError)
 {
-	if (!Property || !Container || !Value.IsValid())
-	{
-		OutError = TEXT("Invalid property, container, or value");
-		return false;
-	}
-
-	void* ValuePtr = Property->ContainerPtrToValuePtr<void>(Container);
-
-	// Handle different property types
-	if (FNumericProperty* NumericProp = CastField<FNumericProperty>(Property))
-	{
-		if (NumericProp->IsFloatingPoint())
-		{
-			double NumValue = 0.0;
-			if (!Value->TryGetNumber(NumValue))
-			{
-				OutError = TEXT("Expected numeric value");
-				return false;
-			}
-			NumericProp->SetFloatingPointPropertyValue(ValuePtr, NumValue);
-		}
-		else
-		{
-			int64 NumValue = 0;
-			if (!Value->TryGetNumber(NumValue))
-			{
-				OutError = TEXT("Expected integer value");
-				return false;
-			}
-			NumericProp->SetIntPropertyValue(ValuePtr, NumValue);
-		}
-		return true;
-	}
-
-	if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
-	{
-		bool BoolValue = false;
-		if (!Value->TryGetBool(BoolValue))
-		{
-			OutError = TEXT("Expected boolean value");
-			return false;
-		}
-		BoolProp->SetPropertyValue(ValuePtr, BoolValue);
-		return true;
-	}
-
-	if (FStrProperty* StrProp = CastField<FStrProperty>(Property))
-	{
-		FString StrValue;
-		if (!Value->TryGetString(StrValue))
-		{
-			OutError = TEXT("Expected string value");
-			return false;
-		}
-		StrProp->SetPropertyValue(ValuePtr, StrValue);
-		return true;
-	}
-
-	if (FNameProperty* NameProp = CastField<FNameProperty>(Property))
-	{
-		FString StrValue;
-		if (!Value->TryGetString(StrValue))
-		{
-			OutError = TEXT("Expected string value for FName");
-			return false;
-		}
-		NameProp->SetPropertyValue(ValuePtr, FName(*StrValue));
-		return true;
-	}
-
-	if (FTextProperty* TextProp = CastField<FTextProperty>(Property))
-	{
-		FString StrValue;
-		if (!Value->TryGetString(StrValue))
-		{
-			OutError = TEXT("Expected string value for FText");
-			return false;
-		}
-		TextProp->SetPropertyValue(ValuePtr, FText::FromString(StrValue));
-		return true;
-	}
-
-	if (FStructProperty* StructProp = CastField<FStructProperty>(Property))
-	{
-		const TSharedPtr<FJsonObject>* JsonObject = nullptr;
-		if (!Value->TryGetObject(JsonObject) || !JsonObject->IsValid())
-		{
-			// Try array for vector types
-			const TArray<TSharedPtr<FJsonValue>>* JsonArray = nullptr;
-			if (Value->TryGetArray(JsonArray))
-			{
-				// Handle FVector, FRotator, FLinearColor as arrays
-				if (StructProp->Struct == TBaseStructure<FVector>::Get() && JsonArray->Num() >= 3)
-				{
-					FVector* Vec = static_cast<FVector*>(ValuePtr);
-					Vec->X = (*JsonArray)[0]->AsNumber();
-					Vec->Y = (*JsonArray)[1]->AsNumber();
-					Vec->Z = (*JsonArray)[2]->AsNumber();
-					return true;
-				}
-				if (StructProp->Struct == TBaseStructure<FRotator>::Get() && JsonArray->Num() >= 3)
-				{
-					FRotator* Rot = static_cast<FRotator*>(ValuePtr);
-					Rot->Pitch = (*JsonArray)[0]->AsNumber();
-					Rot->Yaw = (*JsonArray)[1]->AsNumber();
-					Rot->Roll = (*JsonArray)[2]->AsNumber();
-					return true;
-				}
-				if (StructProp->Struct == TBaseStructure<FLinearColor>::Get() && JsonArray->Num() >= 3)
-				{
-					FLinearColor* Color = static_cast<FLinearColor*>(ValuePtr);
-					Color->R = (*JsonArray)[0]->AsNumber();
-					Color->G = (*JsonArray)[1]->AsNumber();
-					Color->B = (*JsonArray)[2]->AsNumber();
-					Color->A = JsonArray->Num() >= 4 ? (*JsonArray)[3]->AsNumber() : 1.0f;
-					return true;
-				}
-			}
-
-			OutError = TEXT("Expected object or array value for struct");
-			return false;
-		}
-
-		// Use JSON object converter for complex structs
-		if (!FJsonObjectConverter::JsonObjectToUStruct(JsonObject->ToSharedRef(), StructProp->Struct, ValuePtr))
-		{
-			OutError = TEXT("Failed to convert JSON to struct");
-			return false;
-		}
-		return true;
-	}
-
-	if (FEnumProperty* EnumProp = CastField<FEnumProperty>(Property))
-	{
-		FString StrValue;
-		int64 IntValue;
-
-		if (Value->TryGetString(StrValue))
-		{
-			// Try to find enum value by name
-			int64 EnumValue = EnumProp->GetEnum()->GetValueByNameString(StrValue);
-			if (EnumValue == INDEX_NONE)
-			{
-				OutError = FString::Printf(TEXT("Invalid enum value: %s"), *StrValue);
-				return false;
-			}
-			EnumProp->GetUnderlyingProperty()->SetIntPropertyValue(ValuePtr, EnumValue);
-		}
-		else if (Value->TryGetNumber(IntValue))
-		{
-			EnumProp->GetUnderlyingProperty()->SetIntPropertyValue(ValuePtr, IntValue);
-		}
-		else
-		{
-			OutError = TEXT("Expected string or integer for enum");
-			return false;
-		}
-		return true;
-	}
-
-	OutError = FString::Printf(TEXT("Unsupported property type: %s"), *Property->GetClass()->GetName());
-	return false;
+	// Delegate to the unified McpPropertySerializer
+	// This provides support for TMap, TSet, Object references, and all other property types
+	return FMcpPropertySerializer::DeserializePropertyValue(Property, Container, Value, OutError);
 }
 
 UEdGraph* FMcpAssetModifier::FindGraphByName(UBlueprint* Blueprint, const FString& GraphName)

@@ -9,7 +9,8 @@
 FString USetPropertyTool::GetToolDescription() const
 {
 	return TEXT("Set any property on any asset using UE reflection. Supports nested paths (e.g., 'Stats.MaxHealth'), "
-		"array indices (e.g., 'Items[0]'), structs as JSON objects, and vectors/rotators/colors as arrays.");
+		"array indices (e.g., 'Items[0]'), TArray, TMap (as JSON object), TSet (as JSON array), "
+		"object references (as asset paths), structs, and vectors/rotators/colors.");
 }
 
 TMap<FString, FMcpSchemaProperty> USetPropertyTool::GetInputSchema() const
