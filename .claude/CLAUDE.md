@@ -140,7 +140,7 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 - **Port:** 8080 (configurable)
 - **CORS:** Enabled for cross-origin requests
 
-## Available Tools (30 total)
+## Available Tools (31 total)
 
 ### Read Tools (10) - Consolidated in v1.6.0
 
@@ -186,7 +186,7 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 |------|-------------|
 | `get-logs` | Retrieve UE Output Log entries with filtering (category, severity, search) |
 
-### Write Tools (20)
+### Write Tools (21)
 
 #### Property Tools
 | Tool | Description |
@@ -237,7 +237,8 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 #### Build Tools
 | Tool | Description |
 |------|-------------|
-| `trigger-live-coding` | Trigger Live Coding compilation for C++ code changes (Ctrl+Alt+F11 equivalent). Windows only. Requires Live Coding enabled in Editor Preferences. |
+| `trigger-live-coding` | Trigger Live Coding compilation with async/sync modes. Use `wait_for_completion=true` to wait for results with compilation time and log. Optional `timeout` param (default: 300s). Windows only. |
+| `build-and-relaunch` | Close THIS editor instance (by PID), trigger a full project build, and relaunch. Only affects the MCP-connected editor - other running editor instances are not affected. Optional params: `build_config` (Development/Debug/Shipping), `skip_relaunch` (boolean). Returns `editor_pid` in response. Windows only. |
 
 ## Write Tool Usage
 

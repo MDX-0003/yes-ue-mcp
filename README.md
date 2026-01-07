@@ -91,6 +91,7 @@ claude mcp add --transport http unreal-engine http://localhost:8080/mcp
 **30 tools total** (10 read + 20 write/modify tools)
 
 Latest additions:
+- **v1.12.0**: Enhanced `trigger-live-coding` with synchronous wait and compilation results
 - **v1.11.0**: `trigger-live-coding` - Trigger Live Coding compilation for C++ changes
 - **v1.10.0**: `run-python-script` - Execute Python scripts in Unreal Editor with argument passing
 - **v1.9.0**: Dynamic reflection support for materials, nodes, and assets

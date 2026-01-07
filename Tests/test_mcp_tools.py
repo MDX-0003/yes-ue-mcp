@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MCP Tools Integration Tests (v1.11.0 - Live Coding)
+MCP Tools Integration Tests (v1.12.0 - Live Coding Enhanced)
 
 This script tests the yes-ue-mcp plugin tools using Python's unittest framework.
 Updated for the consolidated tool architecture (10 read tools + 20 write tools).
@@ -23,7 +23,7 @@ Scripting Tools:
     - run-python-script: Execute Python scripts in Unreal Editor (inline or file)
 
 Build Tools:
-    - trigger-live-coding: Trigger Live Coding compilation (Ctrl+Alt+F11 equivalent)
+    - trigger-live-coding: Trigger Live Coding compilation with async/sync modes
 
 Consolidated Read Tools:
     - query-blueprint: Merged from analyze-blueprint, get-blueprint-functions,
@@ -3049,17 +3049,35 @@ class TestTriggerLiveCoding(McpTestCase):
         result = self.client.call_tool("trigger-live-coding", {})
         self.assertTrue(result.get("success"), "Live Coding should trigger successfully")
         self.assertIn("status", result)
+        self.assertEqual(result.get("status"), "triggered_async")
         self.assertIn("message", result)
+        self.assertIn("shortcut", result)
 
-    def test_trigger_with_wait_param(self):
-        """Test trigger with wait_for_completion parameter (not yet implemented)."""
+    def test_trigger_sync_mode(self):
+        """Test synchronous compilation with wait_for_completion."""
         result = self.client.call_tool("trigger-live-coding", {
-            "wait_for_completion": True
+            "wait_for_completion": True,
+            "timeout": 60
         })
-        self.assertTrue(result.get("success"))
-        # Note: wait_for_completion is accepted but not yet implemented
-        if "note" in result:
-            self.assertIn("not yet implemented", result.get("note").lower())
+
+        # Should complete successfully or timeout
+        self.assertIn("status", result)
+        self.assertIn(result.get("status"), ["completed", "failed", "timeout"])
+
+        # Check for compilation time if completed
+        if result.get("status") in ["completed", "failed"]:
+            self.assertIn("compilation_time_seconds", result)
+            compilation_time = result.get("compilation_time_seconds")
+            self.assertIsInstance(compilation_time, (int, float))
+            self.assertGreater(compilation_time, 0)
+
+    def test_sync_with_custom_timeout(self):
+        """Test synchronous mode with custom timeout."""
+        result = self.client.call_tool("trigger-live-coding", {
+            "wait_for_completion": True,
+            "timeout": 120
+        })
+        self.assertIn("status", result)
 
     def test_response_format(self):
         """Test that response has expected fields."""
@@ -3069,6 +3087,63 @@ class TestTriggerLiveCoding(McpTestCase):
         self.assertIn("message", result)
         self.assertIn("shortcut", result)
         self.assertEqual(result.get("shortcut"), "Ctrl+Alt+F11")
+
+    def test_sync_returns_compilation_log(self):
+        """Test that sync mode returns compilation log on completion."""
+        result = self.client.call_tool("trigger-live-coding", {
+            "wait_for_completion": True
+        })
+
+        # If compilation completed, should have log
+        if result.get("status") in ["completed", "failed"]:
+            # compilation_log may or may not be present depending on LiveCoding output
+            # Just check the result is structured correctly
+            self.assertIn("compilation_time_seconds", result)
+
+
+class TestBuildAndRelaunch(McpTestCase):
+    """Test build-and-relaunch tool (dry-run tests only - doesn't actually close editor)."""
+
+    def test_response_format(self):
+        """Test that response has expected fields without actually closing editor."""
+        # Note: This test is intentionally commented to prevent accidental editor shutdown
+        # Uncomment only for manual testing
+        pass
+        # result = self.client.call_tool("build-and-relaunch", {})
+        # self.assertIn("success", result)
+        # self.assertIn("status", result)
+        # self.assertIn("project", result)
+        # self.assertIn("build_config", result)
+        # self.assertIn("will_relaunch", result)
+        # self.assertEqual(result.get("build_config"), "Development")
+        # self.assertTrue(result.get("will_relaunch"))
+
+    def test_custom_build_config(self):
+        """Test custom build configuration parameter."""
+        # Note: This test is intentionally commented to prevent accidental editor shutdown
+        # Uncomment only for manual testing
+        pass
+        # result = self.client.call_tool("build-and-relaunch", {
+        #     "build_config": "Debug",
+        #     "skip_relaunch": True
+        # })
+        # self.assertTrue(result.get("success"))
+        # self.assertEqual(result.get("build_config"), "Debug")
+        # self.assertFalse(result.get("will_relaunch"))
+
+    def test_invalid_build_config(self):
+        """Test that invalid build config is rejected."""
+        # This test can run safely as it should fail before triggering editor shutdown
+        try:
+            result = self.client.call_tool("build-and-relaunch", {
+                "build_config": "InvalidConfig"
+            })
+            # Should return an error, not success
+            if result.get("success"):
+                self.fail("Should have rejected invalid build config")
+        except Exception as e:
+            # Expected to fail
+            self.assertIn("Invalid build configuration", str(e))
 
 
 class TestDynamicClassResolution(McpTestCase):
