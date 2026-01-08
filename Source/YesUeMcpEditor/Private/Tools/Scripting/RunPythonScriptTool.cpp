@@ -149,16 +149,11 @@ FString URunPythonScriptTool::ExecutePython(const FString& Command, bool& bOutSu
 		return FString();
 	}
 
-	// Capture stdout/stderr using Python's io module
-	FString CaptureScript = FString::Printf(TEXT(
-		"import sys\n"
-		"from io import StringIO\n"
-		"_mcp_stdout = StringIO()\n"
-		"_mcp_stderr = StringIO()\n"
-		"_old_stdout = sys.stdout\n"
-		"_old_stderr = sys.stderr\n"
-		"sys.stdout = _mcp_stdout\n"
-		"sys.stderr = _mcp_stderr\n"
+	// Record timestamp before execution to filter logs
+	FDateTime StartTime = FDateTime::Now();
+
+	// Wrap script with error handling
+	FString WrappedScript = FString::Printf(TEXT(
 		"_mcp_success = True\n"
 		"_mcp_error = ''\n"
 		"try:\n"
@@ -167,67 +162,68 @@ FString URunPythonScriptTool::ExecutePython(const FString& Command, bool& bOutSu
 		"    _mcp_success = False\n"
 		"    _mcp_error = str(e)\n"
 		"    import traceback\n"
-		"    sys.stderr.write(traceback.format_exc())\n"
-		"finally:\n"
-		"    sys.stdout = _old_stdout\n"
-		"    sys.stderr = _old_stderr\n"
+		"    print(traceback.format_exc())\n"
 	), *Command.Replace(TEXT("\n"), TEXT("\n    "))); // Indent user script
 
-	// Execute the wrapped script
-	PythonPlugin->ExecPythonCommand(*CaptureScript);
+	// Execute the script
+	PythonPlugin->ExecPythonCommand(*WrappedScript);
 
-	// Retrieve captured output
-	FString GetOutputScript = TEXT(
-		"_mcp_output = _mcp_stdout.getvalue() + _mcp_stderr.getvalue()\n"
-		"print(_mcp_output, end='')"
+	// Capture output from LogPython category
+	TArray<FMcpLogEntry> Logs = FMcpLogCapture::Get().GetLogs(
+		TEXT("LogPython"),
+		ELogVerbosity::All,
+		1000,  // Generous limit
+		TEXT("")
 	);
-	PythonPlugin->ExecPythonCommand(*GetOutputScript);
 
-	// Check success status
-	FString CheckSuccessScript = TEXT("print('SUCCESS' if _mcp_success else 'FAILURE', end='')");
-	PythonPlugin->ExecPythonCommand(*CheckSuccessScript);
+	// Filter to entries after StartTime and build output
+	FString Output;
+	for (int32 i = Logs.Num() - 1; i >= 0; --i)  // Oldest to newest (logs are returned newest first)
+	{
+		const FMcpLogEntry& Entry = Logs[i];
+		if (Entry.Timestamp >= StartTime)
+		{
+			if (!Output.IsEmpty())
+			{
+				Output += TEXT("\n");
+			}
+			Output += Entry.Message;
+		}
+	}
 
-	// Get error message if any
-	FString GetErrorScript = TEXT("print(_mcp_error, end='')");
-	PythonPlugin->ExecPythonCommand(*GetErrorScript);
+	// Check success status via a status variable printed to log
+	PythonPlugin->ExecPythonCommand(TEXT("print('MCP_STATUS:' + ('SUCCESS' if _mcp_success else 'FAILURE:' + _mcp_error))"));
 
-	// Note: ExecPythonCommand doesn't return output directly.
-	// We need to use a different approach to capture output.
-	// Let's use ExecPythonCommandEx if available, or set a global variable and retrieve it.
+	// Get the status from logs
+	TArray<FMcpLogEntry> StatusLogs = FMcpLogCapture::Get().GetLogs(
+		TEXT("LogPython"),
+		ELogVerbosity::All,
+		10,
+		TEXT("MCP_STATUS:")
+	);
 
-	// Alternative: Store output in a global variable and retrieve it
-	FString OutputVarScript = FString::Printf(TEXT(
-		"import sys\n"
-		"from io import StringIO\n"
-		"_mcp_capture = StringIO()\n"
-		"_old_stdout = sys.stdout\n"
-		"_old_stderr = sys.stderr\n"
-		"sys.stdout = _mcp_capture\n"
-		"sys.stderr = _mcp_capture\n"
-		"_mcp_success = True\n"
-		"_mcp_error_msg = ''\n"
-		"try:\n"
-		"%s\n"
-		"except Exception as e:\n"
-		"    _mcp_success = False\n"
-		"    _mcp_error_msg = str(e)\n"
-		"    import traceback\n"
-		"    traceback.print_exc()\n"
-		"finally:\n"
-		"    sys.stdout = _old_stdout\n"
-		"    sys.stderr = _old_stderr\n"
-		"    _mcp_output_str = _mcp_capture.getvalue()\n"
-	), *Command.Replace(TEXT("\n"), TEXT("\n    ")));
-
-	PythonPlugin->ExecPythonCommand(*OutputVarScript);
-
-	// Since we can't directly capture return values, we'll use unreal module to set editor properties
-	// For now, return a simple success message
 	bOutSuccess = true;
 	OutError = TEXT("");
 
-	// Return a placeholder message (actual output capture requires more sophisticated approach)
-	return TEXT("Python script executed. Note: Output capture is limited in current implementation. Check Output Log for details.");
+	for (const FMcpLogEntry& Entry : StatusLogs)
+	{
+		if (Entry.Timestamp >= StartTime && Entry.Message.Contains(TEXT("MCP_STATUS:")))
+		{
+			if (Entry.Message.Contains(TEXT("FAILURE:")))
+			{
+				bOutSuccess = false;
+				// Extract error message after "FAILURE:"
+				int32 FailureIdx = Entry.Message.Find(TEXT("FAILURE:"));
+				if (FailureIdx != INDEX_NONE)
+				{
+					OutError = Entry.Message.Mid(FailureIdx + 8);
+				}
+			}
+			break;
+		}
+	}
+
+	return Output;
 }
 
 bool URunPythonScriptTool::ReadScriptFile(const FString& ScriptPath, FString& OutScript, FString& OutError)

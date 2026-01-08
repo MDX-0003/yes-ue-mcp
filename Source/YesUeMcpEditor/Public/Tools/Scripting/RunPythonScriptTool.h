@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Tools/McpToolBase.h"
+#include "Log/McpLogCapture.h"
 #include "RunPythonScriptTool.generated.h"
 
 /**
