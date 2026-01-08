@@ -3293,6 +3293,33 @@ print(f'JSON: {json_str}')
         })
         self.assertTrue(result.get("success"))
 
+    def test_level_loading_advisory(self):
+        """Test that level loading detection adds advisory to response.
+
+        When Python scripts print messages containing level loading keywords
+        (LoadMap, load_level, Loading map), the response should include an
+        advisory field warning about world state changes.
+        """
+        # Test with output containing level loading keyword
+        result = self.client.call_tool("run-python-script", {
+            "script": "print('LoadMap: /Game/Maps/TestLevel')"
+        })
+        self.assertTrue(result.get("success"))
+        self.assertIn("advisory", result,
+                      "Advisory should be present when level loading detected in output")
+        advisory = result.get("advisory", "")
+        self.assertIn("Level loading detected", advisory)
+        self.assertIn("World state may have changed", advisory)
+
+    def test_no_advisory_without_level_loading(self):
+        """Test that advisory is NOT added when no level loading detected."""
+        result = self.client.call_tool("run-python-script", {
+            "script": "print('Hello, no level loading here')"
+        })
+        self.assertTrue(result.get("success"))
+        self.assertNotIn("advisory", result,
+                         "Advisory should NOT be present when no level loading keywords in output")
+
 
 class TestTriggerLiveCoding(McpTestCase):
     """Test trigger-live-coding tool."""

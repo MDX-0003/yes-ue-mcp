@@ -5,6 +5,7 @@
 #include "IPythonScriptPlugin.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "Engine/Engine.h"
 
 FString URunPythonScriptTool::GetToolDescription() const
 {
@@ -117,12 +118,22 @@ FMcpToolResult URunPythonScriptTool::Execute(
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 	Result->SetBoolField(TEXT("success"), bSuccess);
 
+	// Detect if script performed level loading operations
+	bool bLevelLoadDetected = Output.Contains(TEXT("LoadMap")) ||
+	                          Output.Contains(TEXT("load_level")) ||
+	                          Output.Contains(TEXT("Loading map"));
+
 	if (bSuccess)
 	{
 		Result->SetStringField(TEXT("output"), Output);
 		if (!ScriptPath.IsEmpty())
 		{
 			Result->SetStringField(TEXT("script_path"), ScriptPath);
+		}
+		if (bLevelLoadDetected)
+		{
+			Result->SetStringField(TEXT("advisory"),
+				TEXT("Level loading detected. World state may have changed. Verify editor state before continuing."));
 		}
 		UE_LOG(LogYesUeMcp, Log, TEXT("run-python-script: Execution completed successfully"));
 	}
@@ -167,6 +178,11 @@ FString URunPythonScriptTool::ExecutePython(const FString& Command, bool& bOutSu
 
 	// Execute the script
 	PythonPlugin->ExecPythonCommand(*WrappedScript);
+
+	// Force garbage collection to clean up any orphaned objects created by the script
+	// This is critical for scripts that load levels, as they can leave orphaned world/package refs
+	// that would otherwise trigger "World Memory Leaks" fatal errors
+	CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
 
 	// Capture output from LogPython category
 	TArray<FMcpLogEntry> Logs = FMcpLogCapture::Get().GetLogs(
