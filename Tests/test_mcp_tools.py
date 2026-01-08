@@ -324,6 +324,41 @@ class TestReadTools(McpTestCase):
         # Detail mode includes properties
         self.assertIn("properties", detail_result)
 
+    def test_query_level_include_inherited(self):
+        """Test query-level with include_inherited for inherited properties from parent classes."""
+        # First get list of actors to find one to query
+        list_result = self.client.call_tool("query-level", {"limit": 1})
+        if not list_result.get("actors"):
+            self.skipTest("No actors in level to test include_inherited")
+
+        actor_name = list_result["actors"][0]["name"]
+
+        # Query without include_inherited (default behavior)
+        result_without = self.client.call_tool("query-level", {
+            "actor_name": actor_name,
+            "include_properties": True,
+            "include_inherited": False
+        })
+
+        # Query with include_inherited
+        result_with = self.client.call_tool("query-level", {
+            "actor_name": actor_name,
+            "include_properties": True,
+            "include_inherited": True
+        })
+
+        # Both should have properties
+        self.assertIn("properties", result_without)
+        self.assertIn("properties", result_with)
+
+        # With include_inherited, should have MORE properties (from parent classes)
+        # AActor has many inherited properties
+        props_without = len(result_without.get("properties", []))
+        props_with = len(result_with.get("properties", []))
+        self.assertGreater(props_with, props_without,
+            f"include_inherited=true should return more properties than false. "
+            f"Got {props_with} with vs {props_without} without")
+
     def test_get_logs(self):
         """Test get-logs returns log entries."""
         result = self.client.call_tool("get-logs", {"limit": 10})

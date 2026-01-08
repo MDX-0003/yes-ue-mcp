@@ -163,7 +163,7 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 #### Level Tools
 | Tool | Description |
 |------|-------------|
-| `query-level` | List actors with filtering, or get detailed info for a specific actor (use `actor_name` for detail mode) |
+| `query-level` | List actors with filtering, or get detailed info for a specific actor (use `actor_name` for detail mode). Use `include_inherited` with `include_properties` to get inherited properties from parent classes. |
 
 #### Project Tools
 | Tool | Description |

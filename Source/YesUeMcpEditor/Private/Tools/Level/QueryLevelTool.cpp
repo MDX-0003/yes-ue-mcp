@@ -74,6 +74,12 @@ TMap<FString, FMcpSchemaProperty> UQueryLevelTool::GetInputSchema() const
 	IncludeProperties.bRequired = false;
 	Schema.Add(TEXT("include_properties"), IncludeProperties);
 
+	FMcpSchemaProperty IncludeInherited;
+	IncludeInherited.Type = TEXT("boolean");
+	IncludeInherited.Description = TEXT("Include inherited properties from parent classes (default: false). Only applies when include_properties is true.");
+	IncludeInherited.bRequired = false;
+	Schema.Add(TEXT("include_inherited"), IncludeInherited);
+
 	// List mode parameters
 	FMcpSchemaProperty Limit;
 	Limit.Type = TEXT("integer");
@@ -206,6 +212,7 @@ FMcpToolResult UQueryLevelTool::Execute(
 		bool bIncludeProperties = GetBoolArgOrDefault(Arguments, TEXT("include_properties"), false);
 		bool bIncludeComponents = GetBoolArgOrDefault(Arguments, TEXT("include_components"), false);
 		bool bIncludeTransform = GetBoolArgOrDefault(Arguments, TEXT("include_transform"), true);
+		bool bIncludeInherited = GetBoolArgOrDefault(Arguments, TEXT("include_inherited"), false);
 
 		TSharedPtr<FJsonObject> Result = ActorToJson(Actor, bIncludeComponents, bIncludeTransform);
 
@@ -231,7 +238,7 @@ FMcpToolResult UQueryLevelTool::Execute(
 		// If properties requested, add them
 		if (bIncludeProperties)
 		{
-			TSharedPtr<FJsonObject> DetailedResult = ActorToDetailedJson(Actor, true, bIncludeComponents);
+			TSharedPtr<FJsonObject> DetailedResult = ActorToDetailedJson(Actor, true, bIncludeComponents, bIncludeInherited);
 			return FMcpToolResult::Json(DetailedResult);
 		}
 
@@ -546,7 +553,7 @@ AActor* UQueryLevelTool::FindActorByName(const FString& ActorName, UWorld* World
 	return nullptr;
 }
 
-TSharedPtr<FJsonObject> UQueryLevelTool::ActorToDetailedJson(AActor* Actor, bool bIncludeProperties, bool bIncludeComponents) const
+TSharedPtr<FJsonObject> UQueryLevelTool::ActorToDetailedJson(AActor* Actor, bool bIncludeProperties, bool bIncludeComponents, bool bIncludeInherited) const
 {
 	if (!Actor)
 	{
@@ -613,7 +620,11 @@ TSharedPtr<FJsonObject> UQueryLevelTool::ActorToDetailedJson(AActor* Actor, bool
 	{
 		TArray<TSharedPtr<FJsonValue>> PropertiesArray;
 
-		for (TFieldIterator<FProperty> PropIt(Actor->GetClass(), EFieldIteratorFlags::ExcludeSuper); PropIt; ++PropIt)
+		EFieldIteratorFlags::SuperClassFlags SuperFlags = bIncludeInherited
+			? EFieldIteratorFlags::IncludeSuper
+			: EFieldIteratorFlags::ExcludeSuper;
+
+		for (TFieldIterator<FProperty> PropIt(Actor->GetClass(), SuperFlags); PropIt; ++PropIt)
 		{
 			FProperty* Property = *PropIt;
 			if (!Property)
@@ -659,7 +670,7 @@ TSharedPtr<FJsonObject> UQueryLevelTool::ActorToDetailedJson(AActor* Actor, bool
 				continue;
 			}
 
-			TSharedPtr<FJsonObject> ComponentJson = ComponentToDetailedJson(Component, bIncludeProperties);
+			TSharedPtr<FJsonObject> ComponentJson = ComponentToDetailedJson(Component, bIncludeProperties, bIncludeInherited);
 			if (ComponentJson.IsValid())
 			{
 				ComponentsArray.Add(MakeShareable(new FJsonValueObject(ComponentJson)));
@@ -673,7 +684,7 @@ TSharedPtr<FJsonObject> UQueryLevelTool::ActorToDetailedJson(AActor* Actor, bool
 	return ActorJson;
 }
 
-TSharedPtr<FJsonObject> UQueryLevelTool::ComponentToDetailedJson(UActorComponent* Component, bool bIncludeProperties) const
+TSharedPtr<FJsonObject> UQueryLevelTool::ComponentToDetailedJson(UActorComponent* Component, bool bIncludeProperties, bool bIncludeInherited) const
 {
 	if (!Component)
 	{
@@ -748,7 +759,11 @@ TSharedPtr<FJsonObject> UQueryLevelTool::ComponentToDetailedJson(UActorComponent
 	{
 		TArray<TSharedPtr<FJsonValue>> PropertiesArray;
 
-		for (TFieldIterator<FProperty> PropIt(Component->GetClass(), EFieldIteratorFlags::ExcludeSuper); PropIt; ++PropIt)
+		EFieldIteratorFlags::SuperClassFlags SuperFlags = bIncludeInherited
+			? EFieldIteratorFlags::IncludeSuper
+			: EFieldIteratorFlags::ExcludeSuper;
+
+		for (TFieldIterator<FProperty> PropIt(Component->GetClass(), SuperFlags); PropIt; ++PropIt)
 		{
 			FProperty* Property = *PropIt;
 			if (!Property)

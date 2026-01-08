@@ -49,10 +49,10 @@ private:
 	class AActor* FindActorByName(const FString& ActorName, class UWorld* World) const;
 
 	/** Convert actor to detailed JSON with properties */
-	TSharedPtr<FJsonObject> ActorToDetailedJson(class AActor* Actor, bool bIncludeProperties, bool bIncludeComponents) const;
+	TSharedPtr<FJsonObject> ActorToDetailedJson(class AActor* Actor, bool bIncludeProperties, bool bIncludeComponents, bool bIncludeInherited) const;
 
 	/** Convert component to detailed JSON */
-	TSharedPtr<FJsonObject> ComponentToDetailedJson(class UActorComponent* Component, bool bIncludeProperties) const;
+	TSharedPtr<FJsonObject> ComponentToDetailedJson(class UActorComponent* Component, bool bIncludeProperties, bool bIncludeInherited) const;
 
 	/** Convert property to JSON */
 	TSharedPtr<FJsonObject> PropertyToJson(class FProperty* Property, void* ValuePtr, UObject* Owner) const;
