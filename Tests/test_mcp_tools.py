@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MCP Tools Integration Tests (v1.12.0 - Live Coding Enhanced)
+MCP Tools Integration Tests (v1.14.0 - External Level Query)
 
 This script tests the yes-ue-mcp plugin tools using Python's unittest framework.
 Updated for the consolidated tool architecture (10 read tools + 20 write tools).
@@ -32,7 +32,8 @@ Consolidated Read Tools:
                              list-blueprint-callables, get-callable-details
     - query-asset: Merged from search-assets, inspect-asset, inspect-data-asset
     - query-material: Merged from get-material-graph, get-material-parameters
-    - query-level: Merged with get-actor-details (use actor_name for detail mode)
+    - query-level: Merged with get-actor-details (use actor_name for detail mode).
+                   v1.14.0: Added level_path param to query any level without opening it.
     - get-project-info: Merged with get-project-settings (use section param)
     - get-class-hierarchy, find-references, inspect-widget-blueprint, get-logs
 
@@ -358,6 +359,140 @@ class TestReadTools(McpTestCase):
         self.assertGreater(props_with, props_without,
             f"include_inherited=true should return more properties than false. "
             f"Got {props_with} with vs {props_without} without")
+
+    def test_query_level_external_level_path(self):
+        """Test query-level with level_path to query external level without opening it."""
+        # First, find a level asset in the project
+        search_result = self.client.call_tool("query-asset", {
+            "query": "*",
+            "class": "World",
+            "limit": 5
+        })
+
+        if not search_result.get("assets"):
+            self.skipTest("No level assets found in project to test level_path")
+
+        # Get the first level asset path
+        level_path = search_result["assets"][0]["path"]
+
+        # Query actors in that level using level_path
+        result = self.client.call_tool("query-level", {
+            "level_path": level_path,
+            "limit": 50
+        })
+
+        # Should have level info
+        self.assertIn("level_path", result)
+        self.assertEqual(result["level_path"], level_path)
+        self.assertIn("level_name", result)
+        self.assertIn("actors", result)
+        self.assertIn("actor_count", result)
+        self.assertIn("total_actors_in_level", result)
+        self.assertIsInstance(result["actors"], list)
+
+    def test_query_level_external_with_class_filter(self):
+        """Test query-level with level_path and class filter."""
+        # Find a level asset
+        search_result = self.client.call_tool("query-asset", {
+            "query": "*",
+            "class": "World",
+            "limit": 1
+        })
+
+        if not search_result.get("assets"):
+            self.skipTest("No level assets found in project")
+
+        level_path = search_result["assets"][0]["path"]
+
+        # Query with class filter
+        result = self.client.call_tool("query-level", {
+            "level_path": level_path,
+            "class_filter": "*Light*",
+            "limit": 20
+        })
+
+        self.assertIn("actors", result)
+        # All returned actors should match filter
+        for actor in result["actors"]:
+            self.assertIn("Light", actor["class"])
+
+    def test_query_level_external_detail_mode(self):
+        """Test query-level with level_path and actor_name for detailed actor info."""
+        # Find a level asset
+        search_result = self.client.call_tool("query-asset", {
+            "query": "*",
+            "class": "World",
+            "limit": 1
+        })
+
+        if not search_result.get("assets"):
+            self.skipTest("No level assets found in project")
+
+        level_path = search_result["assets"][0]["path"]
+
+        # First get list of actors in the external level
+        list_result = self.client.call_tool("query-level", {
+            "level_path": level_path,
+            "limit": 1
+        })
+
+        if not list_result.get("actors"):
+            self.skipTest("No actors in external level to test detail mode")
+
+        actor_name = list_result["actors"][0]["name"]
+
+        # Query with actor_name for detailed info
+        detail_result = self.client.call_tool("query-level", {
+            "level_path": level_path,
+            "actor_name": actor_name,
+            "include_properties": True,
+            "include_components": True
+        })
+
+        # Should have detailed info
+        self.assertIn("name", detail_result)
+        self.assertIn("class", detail_result)
+        self.assertIn("level_path", detail_result)
+        self.assertEqual(detail_result["level_path"], level_path)
+        # Detail mode includes properties
+        self.assertIn("properties", detail_result)
+
+    def test_query_level_external_invalid_path(self):
+        """Test query-level with invalid level_path returns error."""
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("query-level", {
+                "level_path": "/Game/Maps/NonExistentLevel_12345_MCP_Test"
+            })
+        error_msg = str(ctx.exception).lower()
+        self.assertTrue(
+            "failed to load" in error_msg or "not found" in error_msg,
+            f"Expected 'failed to load' error, got: {ctx.exception}"
+        )
+
+    def test_query_level_external_actor_not_found(self):
+        """Test query-level with level_path and non-existent actor_name returns error."""
+        # Find a level asset
+        search_result = self.client.call_tool("query-asset", {
+            "query": "*",
+            "class": "World",
+            "limit": 1
+        })
+
+        if not search_result.get("assets"):
+            self.skipTest("No level assets found in project")
+
+        level_path = search_result["assets"][0]["path"]
+
+        with self.assertRaises(McpError) as ctx:
+            self.client.call_tool("query-level", {
+                "level_path": level_path,
+                "actor_name": "NonExistentActor_12345_MCP_Test"
+            })
+        error_msg = str(ctx.exception).lower()
+        self.assertTrue(
+            "not found" in error_msg,
+            f"Expected 'not found' error, got: {ctx.exception}"
+        )
 
     def test_get_logs(self):
         """Test get-logs returns log entries."""

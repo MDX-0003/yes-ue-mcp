@@ -13,7 +13,8 @@
 
 FString UQueryLevelTool::GetToolDescription() const
 {
-	return TEXT("List actors in the currently open level with filtering options. "
+	return TEXT("Query actors in levels. Use 'level_path' to query any level asset without opening it (e.g., '/Game/Maps/Level2'). "
+		"Without 'level_path', queries the current editor/PIE world. "
 		"Returns actor names, classes, transforms, and optionally components. "
 		"When actor_name is specified, returns detailed info for that specific actor including properties.");
 }
@@ -21,6 +22,13 @@ FString UQueryLevelTool::GetToolDescription() const
 TMap<FString, FMcpSchemaProperty> UQueryLevelTool::GetInputSchema() const
 {
 	TMap<FString, FMcpSchemaProperty> Schema;
+
+	// External level parameter
+	FMcpSchemaProperty LevelPath;
+	LevelPath.Type = TEXT("string");
+	LevelPath.Description = TEXT("Asset path to query (e.g., '/Game/Maps/Level2'). If omitted, queries the current editor/PIE world.");
+	LevelPath.bRequired = false;
+	Schema.Add(TEXT("level_path"), LevelPath);
 
 	// Detail mode parameter
 	FMcpSchemaProperty ActorName;
@@ -109,6 +117,13 @@ FMcpToolResult UQueryLevelTool::Execute(
 	if (!GEditor)
 	{
 		return FMcpToolResult::Error(TEXT("Editor not available"));
+	}
+
+	// Check for external level path - if provided, load and query that level
+	FString LevelPath = GetStringArgOrDefault(Arguments, TEXT("level_path"), TEXT(""));
+	if (!LevelPath.IsEmpty())
+	{
+		return QueryExternalLevel(LevelPath, Arguments);
 	}
 
 	// Get world_type parameter: 'auto' (default), 'pie', or 'editor'
@@ -906,4 +921,146 @@ TSharedPtr<FJsonObject> UQueryLevelTool::TransformToJson(const FTransform& Trans
 	TransformJson->SetObjectField(TEXT("scale"), ScaleJson);
 
 	return TransformJson;
+}
+
+// === External level loading ===
+
+FMcpToolResult UQueryLevelTool::QueryExternalLevel(const FString& LevelPath, const TSharedPtr<FJsonObject>& Arguments) const
+{
+	UE_LOG(LogYesUeMcp, Log, TEXT("query-level: Loading external level '%s'"), *LevelPath);
+
+	// Load the level package without opening it in the editor
+	UWorld* LoadedWorld = Cast<UWorld>(StaticLoadObject(UWorld::StaticClass(), nullptr, *LevelPath, nullptr, LOAD_NoWarn | LOAD_Quiet));
+
+	if (!LoadedWorld)
+	{
+		return FMcpToolResult::Error(FString::Printf(
+			TEXT("Failed to load level: %s. Ensure the path is correct (e.g., '/Game/Maps/Level2')."), *LevelPath));
+	}
+
+	// Get parameters
+	FString ActorName = GetStringArgOrDefault(Arguments, TEXT("actor_name"), TEXT(""));
+	FString ClassFilter = GetStringArgOrDefault(Arguments, TEXT("class_filter"), TEXT(""));
+	FString FolderFilter = GetStringArgOrDefault(Arguments, TEXT("folder_filter"), TEXT(""));
+	FString TagFilter = GetStringArgOrDefault(Arguments, TEXT("tag_filter"), TEXT(""));
+	bool bIncludeHidden = GetBoolArgOrDefault(Arguments, TEXT("include_hidden"), false);
+	bool bIncludeComponents = GetBoolArgOrDefault(Arguments, TEXT("include_components"), false);
+	bool bIncludeTransform = GetBoolArgOrDefault(Arguments, TEXT("include_transform"), true);
+	bool bIncludeProperties = GetBoolArgOrDefault(Arguments, TEXT("include_properties"), false);
+	bool bIncludeInherited = GetBoolArgOrDefault(Arguments, TEXT("include_inherited"), false);
+	int32 Limit = GetIntArgOrDefault(Arguments, TEXT("limit"), 100);
+
+	// Get the persistent level
+	ULevel* PersistentLevel = LoadedWorld->PersistentLevel;
+	if (!PersistentLevel)
+	{
+		return FMcpToolResult::Error(FString::Printf(
+			TEXT("Level '%s' has no persistent level data."), *LevelPath));
+	}
+
+	UE_LOG(LogYesUeMcp, Log, TEXT("query-level: External level '%s' has %d actors"),
+		*LevelPath, PersistentLevel->Actors.Num());
+
+	// Detail mode - find specific actor
+	if (!ActorName.IsEmpty())
+	{
+		for (AActor* Actor : PersistentLevel->Actors)
+		{
+			if (!Actor)
+			{
+				continue;
+			}
+
+			if (MatchesWildcard(Actor->GetName(), ActorName) ||
+				MatchesWildcard(Actor->GetActorLabel(), ActorName))
+			{
+				UE_LOG(LogYesUeMcp, Log, TEXT("query-level: Found actor '%s' in external level"), *Actor->GetName());
+
+				TSharedPtr<FJsonObject> Result;
+				if (bIncludeProperties)
+				{
+					Result = ActorToDetailedJson(Actor, true, bIncludeComponents, bIncludeInherited);
+				}
+				else
+				{
+					Result = ActorToJson(Actor, bIncludeComponents, bIncludeTransform);
+				}
+
+				Result->SetStringField(TEXT("level_path"), LevelPath);
+				Result->SetStringField(TEXT("level"), LoadedWorld->GetName());
+				return FMcpToolResult::Json(Result);
+			}
+		}
+
+		return FMcpToolResult::Error(FString::Printf(
+			TEXT("Actor '%s' not found in level '%s'"), *ActorName, *LevelPath));
+	}
+
+	// List mode - return filtered actors
+	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+	Result->SetStringField(TEXT("level_path"), LevelPath);
+	Result->SetStringField(TEXT("level_name"), LoadedWorld->GetName());
+
+	TArray<TSharedPtr<FJsonValue>> ActorsArray;
+	int32 ProcessedCount = 0;
+	bool bLimitReached = false;
+
+	for (AActor* Actor : PersistentLevel->Actors)
+	{
+		if (!Actor)
+		{
+			continue;
+		}
+
+		// Check limit
+		if (ActorsArray.Num() >= Limit)
+		{
+			bLimitReached = true;
+			break;
+		}
+
+		ProcessedCount++;
+
+		// Apply hidden filter
+		if (!bIncludeHidden && Actor->IsHidden())
+		{
+			continue;
+		}
+
+		// Apply class filter
+		if (!ClassFilter.IsEmpty() && !MatchesClassFilter(Actor, ClassFilter))
+		{
+			continue;
+		}
+
+		// Apply folder filter
+		if (!FolderFilter.IsEmpty() && !MatchesFolderFilter(Actor, FolderFilter))
+		{
+			continue;
+		}
+
+		// Apply tag filter
+		if (!TagFilter.IsEmpty() && !MatchesTagFilter(Actor, TagFilter))
+		{
+			continue;
+		}
+
+		// Add actor to results
+		TSharedPtr<FJsonObject> ActorJson = ActorToJson(Actor, bIncludeComponents, bIncludeTransform);
+		if (ActorJson.IsValid())
+		{
+			ActorsArray.Add(MakeShareable(new FJsonValueObject(ActorJson)));
+		}
+	}
+
+	Result->SetArrayField(TEXT("actors"), ActorsArray);
+	Result->SetNumberField(TEXT("actor_count"), ActorsArray.Num());
+	Result->SetNumberField(TEXT("total_actors_in_level"), PersistentLevel->Actors.Num());
+	Result->SetNumberField(TEXT("total_actors_processed"), ProcessedCount);
+	Result->SetBoolField(TEXT("limit_reached"), bLimitReached);
+
+	UE_LOG(LogYesUeMcp, Log, TEXT("query-level: External level query complete - %d actors returned"),
+		ActorsArray.Num());
+
+	return FMcpToolResult::Json(Result);
 }

@@ -60,6 +60,11 @@ private:
 	/** Get property type as string */
 	FString GetPropertyTypeString(class FProperty* Property) const;
 
+	// === External level loading ===
+
+	/** Query actors in an external level asset without opening it in the editor */
+	FMcpToolResult QueryExternalLevel(const FString& LevelPath, const TSharedPtr<FJsonObject>& Arguments) const;
+
 	// === Shared ===
 
 	/** Get transform as JSON */
