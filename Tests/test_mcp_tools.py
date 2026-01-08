@@ -3058,6 +3058,89 @@ for i in range(5):
 """
         })
         self.assertTrue(result.get("success"))
+        output = result.get("output", "")
+        # Verify all lines are captured
+        for i in range(5):
+            self.assertIn(f"Line {i}", output, f"Output should contain 'Line {i}'")
+
+    def test_output_capture_simple(self):
+        """Test that simple print output is captured and returned."""
+        result = self.client.call_tool("run-python-script", {
+            "script": "print('CAPTURE_TEST_MARKER_12345')"
+        })
+        self.assertTrue(result.get("success"))
+        output = result.get("output", "")
+        self.assertIn("CAPTURE_TEST_MARKER_12345", output,
+                      "Output should contain the printed marker string")
+
+    def test_output_capture_calculation(self):
+        """Test that calculation results are captured in output."""
+        result = self.client.call_tool("run-python-script", {
+            "script": "x = 7 * 6\nprint(f'Answer: {x}')"
+        })
+        self.assertTrue(result.get("success"))
+        output = result.get("output", "")
+        self.assertIn("Answer: 42", output,
+                      "Output should contain the calculation result")
+
+    def test_output_capture_multiple_prints(self):
+        """Test that multiple print statements are all captured."""
+        result = self.client.call_tool("run-python-script", {
+            "script": """
+print('First line')
+print('Second line')
+print('Third line')
+"""
+        })
+        self.assertTrue(result.get("success"))
+        output = result.get("output", "")
+        self.assertIn("First line", output)
+        self.assertIn("Second line", output)
+        self.assertIn("Third line", output)
+
+    def test_output_not_placeholder(self):
+        """Test that output is actual script output, not a placeholder message."""
+        result = self.client.call_tool("run-python-script", {
+            "script": "print('REAL_OUTPUT_TEST')"
+        })
+        self.assertTrue(result.get("success"))
+        output = result.get("output", "")
+        # Should NOT contain the old placeholder message
+        self.assertNotIn("Output capture is limited", output,
+                         "Output should be real output, not placeholder message")
+        self.assertNotIn("Check Output Log for details", output,
+                         "Output should be real output, not placeholder message")
+        # Should contain actual output
+        self.assertIn("REAL_OUTPUT_TEST", output)
+
+    def test_error_output_capture(self):
+        """Test that error tracebacks are captured in output."""
+        result = self.client.call_tool("run-python-script", {
+            "script": "x = 1 / 0"  # ZeroDivisionError
+        })
+        # Script should fail
+        self.assertFalse(result.get("success", True))
+        # Error should be captured
+        self.assertIn("error", result)
+        error = result.get("error", "")
+        self.assertIn("ZeroDivisionError", error + result.get("output", ""),
+                      "Error traceback should be captured")
+
+    def test_output_with_arguments(self):
+        """Test that output is captured when using arguments."""
+        result = self.client.call_tool("run-python-script", {
+            "script": """
+import unreal
+args = unreal.get_mcp_args() if hasattr(unreal, 'get_mcp_args') else {}
+name = args.get('name', 'Unknown')
+print(f'Hello, {name}!')
+""",
+            "arguments": {"name": "TestUser"}
+        })
+        self.assertTrue(result.get("success"))
+        output = result.get("output", "")
+        self.assertIn("Hello, TestUser!", output,
+                      "Output should contain argument-based greeting")
 
     def test_import_standard_library(self):
         """Test importing Python standard library modules."""
