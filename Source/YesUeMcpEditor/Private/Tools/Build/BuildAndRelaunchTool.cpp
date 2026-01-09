@@ -142,10 +142,11 @@ FMcpToolResult UBuildAndRelaunchTool::Execute(
 
 	UE_LOG(LogYesUeMcp, Log, TEXT("build-and-relaunch: Created batch script at: %s"), *TempScriptPath);
 
-	// Launch the batch script
+	// Launch the batch script via cmd.exe (batch files can't be executed directly by CreateProc)
+	FString CmdArgs = FString::Printf(TEXT("/c \"%s\""), *TempScriptPath);
 	FProcHandle ProcHandle = FPlatformProcess::CreateProc(
-		*TempScriptPath,
-		TEXT(""),
+		TEXT("cmd.exe"),
+		*CmdArgs,
 		true,  // bLaunchDetached
 		false, // bLaunchHidden
 		false, // bLaunchReallyHidden
