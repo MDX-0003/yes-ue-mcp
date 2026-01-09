@@ -52,6 +52,7 @@
 // PIE (Play-In-Editor) tools - Consolidated
 #include "Tools/PIE/PieSessionTool.h"
 #include "Tools/PIE/PieActorTool.h"
+#include "Tools/PIE/PieInputTool.h"
 
 DEFINE_LOG_CATEGORY(LogYesUeMcpEditor);
 DEFINE_LOG_CATEGORY(LogYesUeMcp);
@@ -153,9 +154,10 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 	Registry.RegisterToolClass(UTriggerLiveCodingTool::StaticClass());
 	Registry.RegisterToolClass(UBuildAndRelaunchTool::StaticClass());
 
-	// PIE (Play-In-Editor) tools - Consolidated (was 7 tools, now 2)
+	// PIE (Play-In-Editor) tools - Consolidated (3 tools)
 	Registry.RegisterToolClass(UPieSessionTool::StaticClass());
 	Registry.RegisterToolClass(UPieActorTool::StaticClass());
+	Registry.RegisterToolClass(UPieInputTool::StaticClass());
 
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("Registered %d MCP tools"), Registry.GetToolCount());
 }

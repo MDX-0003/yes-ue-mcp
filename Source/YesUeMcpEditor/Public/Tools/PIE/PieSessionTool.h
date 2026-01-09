@@ -8,7 +8,7 @@
 
 /**
  * Consolidated PIE session control tool.
- * Actions: start, stop, pause, resume, get-state
+ * Actions: start, stop, pause, resume, get-state, wait-for
  */
 UCLASS()
 class YESUEMCPEDITOR_API UPieSessionTool : public UMcpToolBase
@@ -31,8 +31,11 @@ private:
 	FMcpToolResult ExecutePause(const TSharedPtr<FJsonObject>& Arguments);
 	FMcpToolResult ExecuteResume(const TSharedPtr<FJsonObject>& Arguments);
 	FMcpToolResult ExecuteGetState(const TSharedPtr<FJsonObject>& Arguments);
+	FMcpToolResult ExecuteWaitFor(const TSharedPtr<FJsonObject>& Arguments);
 
 	FString GenerateSessionId() const;
+	AActor* FindActorByName(UWorld* World, const FString& ActorName) const;
+	TSharedPtr<FJsonValue> GetActorProperty(AActor* Actor, const FString& PropertyName) const;
 	UWorld* GetPIEWorld() const;
 	bool WaitForPIEReady(float TimeoutSeconds) const;
 	TSharedPtr<FJsonObject> GetWorldInfo(UWorld* PIEWorld) const;

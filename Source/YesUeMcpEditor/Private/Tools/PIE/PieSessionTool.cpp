@@ -16,7 +16,7 @@
 
 FString UPieSessionTool::GetToolDescription() const
 {
-	return TEXT("Control PIE (Play-In-Editor) sessions. Actions: 'start' (begin PIE), 'stop' (end PIE), 'pause', 'resume', 'get-state' (query session info).");
+	return TEXT("Control PIE (Play-In-Editor) sessions. Actions: 'start', 'stop', 'pause', 'resume', 'get-state', 'wait-for' (wait until condition met).");
 }
 
 TMap<FString, FMcpSchemaProperty> UPieSessionTool::GetInputSchema() const
@@ -25,7 +25,7 @@ TMap<FString, FMcpSchemaProperty> UPieSessionTool::GetInputSchema() const
 
 	FMcpSchemaProperty Action;
 	Action.Type = TEXT("string");
-	Action.Description = TEXT("Action to perform: 'start', 'stop', 'pause', 'resume', or 'get-state'");
+	Action.Description = TEXT("Action: 'start', 'stop', 'pause', 'resume', 'get-state', or 'wait-for'");
 	Action.bRequired = true;
 	Schema.Add(TEXT("action"), Action);
 
@@ -52,6 +52,43 @@ TMap<FString, FMcpSchemaProperty> UPieSessionTool::GetInputSchema() const
 	Include.Description = TEXT("[get-state] What to include: 'world', 'players'. Default: all.");
 	Include.bRequired = false;
 	Schema.Add(TEXT("include"), Include);
+
+	// wait-for parameters
+	FMcpSchemaProperty ActorName;
+	ActorName.Type = TEXT("string");
+	ActorName.Description = TEXT("[wait-for] Actor name to monitor");
+	ActorName.bRequired = false;
+	Schema.Add(TEXT("actor_name"), ActorName);
+
+	FMcpSchemaProperty Property;
+	Property.Type = TEXT("string");
+	Property.Description = TEXT("[wait-for] Property name to check (e.g., 'Health', 'bIsDead')");
+	Property.bRequired = false;
+	Schema.Add(TEXT("property"), Property);
+
+	FMcpSchemaProperty Operator;
+	Operator.Type = TEXT("string");
+	Operator.Description = TEXT("[wait-for] Comparison: 'equals', 'not_equals', 'less_than', 'greater_than', 'contains'");
+	Operator.bRequired = false;
+	Schema.Add(TEXT("operator"), Operator);
+
+	FMcpSchemaProperty ExpectedValue;
+	ExpectedValue.Type = TEXT("any");
+	ExpectedValue.Description = TEXT("[wait-for] Expected value for comparison");
+	ExpectedValue.bRequired = false;
+	Schema.Add(TEXT("expected"), ExpectedValue);
+
+	FMcpSchemaProperty WaitTimeout;
+	WaitTimeout.Type = TEXT("number");
+	WaitTimeout.Description = TEXT("[wait-for] Timeout in seconds (default: 10)");
+	WaitTimeout.bRequired = false;
+	Schema.Add(TEXT("wait_timeout"), WaitTimeout);
+
+	FMcpSchemaProperty PollInterval;
+	PollInterval.Type = TEXT("number");
+	PollInterval.Description = TEXT("[wait-for] Poll interval in seconds (default: 0.1)");
+	PollInterval.bRequired = false;
+	Schema.Add(TEXT("poll_interval"), PollInterval);
 
 	return Schema;
 }
@@ -82,10 +119,14 @@ FMcpToolResult UPieSessionTool::Execute(
 	{
 		return ExecuteGetState(Arguments);
 	}
+	else if (Action == TEXT("wait-for") || Action == TEXT("wait"))
+	{
+		return ExecuteWaitFor(Arguments);
+	}
 	else
 	{
 		return FMcpToolResult::Error(FString::Printf(
-			TEXT("Unknown action: '%s'. Valid actions: start, stop, pause, resume, get-state"), *Action));
+			TEXT("Unknown action: '%s'. Valid: start, stop, pause, resume, get-state, wait-for"), *Action));
 	}
 }
 
@@ -424,4 +465,216 @@ TSharedPtr<FJsonArray> UPieSessionTool::GetPlayersInfo(UWorld* PIEWorld) const
 	}
 
 	return PlayersArray;
+}
+
+FMcpToolResult UPieSessionTool::ExecuteWaitFor(const TSharedPtr<FJsonObject>& Arguments)
+{
+	if (!GEditor->IsPlaySessionInProgress())
+	{
+		return FMcpToolResult::Error(TEXT("No PIE session running"));
+	}
+
+	UWorld* PIEWorld = GetPIEWorld();
+	if (!PIEWorld)
+	{
+		return FMcpToolResult::Error(TEXT("PIE world not found"));
+	}
+
+	FString ActorName = GetStringArgOrDefault(Arguments, TEXT("actor_name"));
+	FString PropertyName = GetStringArgOrDefault(Arguments, TEXT("property"));
+	FString Operator = GetStringArgOrDefault(Arguments, TEXT("operator"), TEXT("equals"));
+	float WaitTimeout = GetFloatArgOrDefault(Arguments, TEXT("wait_timeout"), 10.0f);
+	float PollInterval = GetFloatArgOrDefault(Arguments, TEXT("poll_interval"), 0.1f);
+
+	if (ActorName.IsEmpty())
+	{
+		return FMcpToolResult::Error(TEXT("actor_name is required for wait-for action"));
+	}
+	if (PropertyName.IsEmpty())
+	{
+		return FMcpToolResult::Error(TEXT("property is required for wait-for action"));
+	}
+
+	// Get expected value
+	TSharedPtr<FJsonValue> ExpectedJson = Arguments->TryGetField(TEXT("expected"));
+	if (!ExpectedJson.IsValid())
+	{
+		return FMcpToolResult::Error(TEXT("expected value is required for wait-for action"));
+	}
+
+	UE_LOG(LogYesUeMcp, Log, TEXT("pie-session: Waiting for %s.%s %s ..."),
+		*ActorName, *PropertyName, *Operator);
+
+	const double StartTime = FPlatformTime::Seconds();
+	const double EndTime = StartTime + WaitTimeout;
+	bool bConditionMet = false;
+	TSharedPtr<FJsonValue> ActualValue;
+
+	while (FPlatformTime::Seconds() < EndTime)
+	{
+		// Check if PIE is still running
+		if (!GEditor->IsPlaySessionInProgress())
+		{
+			return FMcpToolResult::Error(TEXT("PIE session ended while waiting"));
+		}
+
+		// Find actor
+		AActor* Actor = FindActorByName(PIEWorld, ActorName);
+		if (!Actor)
+		{
+			// Actor might not exist yet, keep waiting
+			FPlatformProcess::Sleep(PollInterval);
+			continue;
+		}
+
+		// Get property value
+		ActualValue = GetActorProperty(Actor, PropertyName);
+		if (!ActualValue.IsValid())
+		{
+			FPlatformProcess::Sleep(PollInterval);
+			continue;
+		}
+
+		// Compare values
+		bool bMatch = false;
+		if (Operator == TEXT("equals") || Operator == TEXT("eq") || Operator == TEXT("=="))
+		{
+			// Compare based on type
+			if (ActualValue->Type == EJson::Boolean && ExpectedJson->Type == EJson::Boolean)
+			{
+				bMatch = ActualValue->AsBool() == ExpectedJson->AsBool();
+			}
+			else if (ActualValue->Type == EJson::Number && ExpectedJson->Type == EJson::Number)
+			{
+				bMatch = FMath::IsNearlyEqual(ActualValue->AsNumber(), ExpectedJson->AsNumber(), 0.001);
+			}
+			else if (ActualValue->Type == EJson::String && ExpectedJson->Type == EJson::String)
+			{
+				bMatch = ActualValue->AsString().Equals(ExpectedJson->AsString(), ESearchCase::IgnoreCase);
+			}
+			else
+			{
+				// Fallback: compare as strings
+				bMatch = ActualValue->AsString().Equals(ExpectedJson->AsString());
+			}
+		}
+		else if (Operator == TEXT("not_equals") || Operator == TEXT("ne") || Operator == TEXT("!="))
+		{
+			if (ActualValue->Type == EJson::Boolean && ExpectedJson->Type == EJson::Boolean)
+			{
+				bMatch = ActualValue->AsBool() != ExpectedJson->AsBool();
+			}
+			else if (ActualValue->Type == EJson::Number && ExpectedJson->Type == EJson::Number)
+			{
+				bMatch = !FMath::IsNearlyEqual(ActualValue->AsNumber(), ExpectedJson->AsNumber(), 0.001);
+			}
+			else
+			{
+				bMatch = !ActualValue->AsString().Equals(ExpectedJson->AsString());
+			}
+		}
+		else if (Operator == TEXT("less_than") || Operator == TEXT("lt") || Operator == TEXT("<"))
+		{
+			bMatch = ActualValue->AsNumber() < ExpectedJson->AsNumber();
+		}
+		else if (Operator == TEXT("greater_than") || Operator == TEXT("gt") || Operator == TEXT(">"))
+		{
+			bMatch = ActualValue->AsNumber() > ExpectedJson->AsNumber();
+		}
+		else if (Operator == TEXT("less_equal") || Operator == TEXT("le") || Operator == TEXT("<="))
+		{
+			bMatch = ActualValue->AsNumber() <= ExpectedJson->AsNumber();
+		}
+		else if (Operator == TEXT("greater_equal") || Operator == TEXT("ge") || Operator == TEXT(">="))
+		{
+			bMatch = ActualValue->AsNumber() >= ExpectedJson->AsNumber();
+		}
+		else if (Operator == TEXT("contains"))
+		{
+			bMatch = ActualValue->AsString().Contains(ExpectedJson->AsString());
+		}
+
+		if (bMatch)
+		{
+			bConditionMet = true;
+			break;
+		}
+
+		FPlatformProcess::Sleep(PollInterval);
+	}
+
+	double WaitTime = FPlatformTime::Seconds() - StartTime;
+
+	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
+	Result->SetBoolField(TEXT("success"), bConditionMet);
+	Result->SetBoolField(TEXT("condition_met"), bConditionMet);
+	Result->SetNumberField(TEXT("wait_time_seconds"), WaitTime);
+
+	if (ActualValue.IsValid())
+	{
+		Result->SetField(TEXT("actual_value"), ActualValue);
+	}
+
+	if (!bConditionMet)
+	{
+		Result->SetStringField(TEXT("message"), FString::Printf(TEXT("Timeout after %.1f seconds"), WaitTime));
+		UE_LOG(LogYesUeMcp, Warning, TEXT("pie-session: wait-for timed out after %.1fs"), WaitTime);
+	}
+	else
+	{
+		UE_LOG(LogYesUeMcp, Log, TEXT("pie-session: wait-for condition met in %.1fs"), WaitTime);
+	}
+
+	return FMcpToolResult::Json(Result);
+}
+
+AActor* UPieSessionTool::FindActorByName(UWorld* World, const FString& ActorName) const
+{
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		if ((*It)->GetName().Equals(ActorName, ESearchCase::IgnoreCase))
+		{
+			return *It;
+		}
+	}
+	return nullptr;
+}
+
+TSharedPtr<FJsonValue> UPieSessionTool::GetActorProperty(AActor* Actor, const FString& PropertyName) const
+{
+	if (!Actor) return nullptr;
+
+	FProperty* Property = Actor->GetClass()->FindPropertyByName(FName(*PropertyName));
+	if (!Property) return nullptr;
+
+	void* ValuePtr = Property->ContainerPtrToValuePtr<void>(Actor);
+
+	if (FNumericProperty* NumProp = CastField<FNumericProperty>(Property))
+	{
+		if (NumProp->IsFloatingPoint())
+		{
+			double Value = 0;
+			NumProp->GetValue_InContainer(Actor, &Value);
+			return MakeShareable(new FJsonValueNumber(Value));
+		}
+		else
+		{
+			int64 Value = 0;
+			NumProp->GetValue_InContainer(Actor, &Value);
+			return MakeShareable(new FJsonValueNumber(static_cast<double>(Value)));
+		}
+	}
+	else if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
+	{
+		return MakeShareable(new FJsonValueBoolean(BoolProp->GetPropertyValue(ValuePtr)));
+	}
+	else if (FStrProperty* StrProp = CastField<FStrProperty>(Property))
+	{
+		return MakeShareable(new FJsonValueString(StrProp->GetPropertyValue(ValuePtr)));
+	}
+
+	// Fallback
+	FString ExportedText;
+	Property->ExportTextItem_Direct(ExportedText, ValuePtr, nullptr, nullptr, PPF_None);
+	return MakeShareable(new FJsonValueString(ExportedText));
 }
