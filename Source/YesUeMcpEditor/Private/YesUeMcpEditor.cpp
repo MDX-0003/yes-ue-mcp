@@ -49,16 +49,9 @@
 #include "Tools/Build/TriggerLiveCodingTool.h"
 #include "Tools/Build/BuildAndRelaunchTool.h"
 
-// PIE (Play-In-Editor) tools - Session Control
-#include "Tools/PIE/StartPieTool.h"
-#include "Tools/PIE/StopPieTool.h"
-#include "Tools/PIE/GetPieStateTool.h"
-#include "Tools/PIE/PausePieTool.h"
-
-// PIE tools - Actor Control
-#include "Tools/PIE/GetActorStateTool.h"
-#include "Tools/PIE/PieSpawnActorTool.h"
-#include "Tools/PIE/CallFunctionTool.h"
+// PIE (Play-In-Editor) tools - Consolidated
+#include "Tools/PIE/PieSessionTool.h"
+#include "Tools/PIE/PieActorTool.h"
 
 DEFINE_LOG_CATEGORY(LogYesUeMcpEditor);
 DEFINE_LOG_CATEGORY(LogYesUeMcp);
@@ -160,16 +153,9 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 	Registry.RegisterToolClass(UTriggerLiveCodingTool::StaticClass());
 	Registry.RegisterToolClass(UBuildAndRelaunchTool::StaticClass());
 
-	// PIE (Play-In-Editor) tools - Session Control
-	Registry.RegisterToolClass(UStartPieTool::StaticClass());
-	Registry.RegisterToolClass(UStopPieTool::StaticClass());
-	Registry.RegisterToolClass(UGetPieStateTool::StaticClass());
-	Registry.RegisterToolClass(UPausePieTool::StaticClass());
-
-	// PIE tools - Actor Control
-	Registry.RegisterToolClass(UGetActorStateTool::StaticClass());
-	Registry.RegisterToolClass(UPieSpawnActorTool::StaticClass());
-	Registry.RegisterToolClass(UCallFunctionTool::StaticClass());
+	// PIE (Play-In-Editor) tools - Consolidated (was 7 tools, now 2)
+	Registry.RegisterToolClass(UPieSessionTool::StaticClass());
+	Registry.RegisterToolClass(UPieActorTool::StaticClass());
 
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("Registered %d MCP tools"), Registry.GetToolCount());
 }
