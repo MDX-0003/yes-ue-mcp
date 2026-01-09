@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """
-MCP Tools Integration Tests (v1.16.0 - PIE tools refactor)
+MCP Tools Integration Tests (v1.17.0 - SCM asset diff)
 
 This script tests the yes-ue-mcp plugin tools using Python's unittest framework.
-Updated for the consolidated tool architecture (10 read tools + 21 write tools).
+Updated for the consolidated tool architecture (11 read tools + 21 write tools).
+
+v1.17.0 SCM Asset Diff:
+    - get-asset-diff: Compare binary assets against Git/Perforce base version
+    - Supports Blueprints, Materials, DataTables, and generic UObjects
+    - Auto-detects SCM type or accepts explicit scm_type parameter
 
 v1.16.0 PIE Tools Refactor:
     - pie-session: Control PIE sessions (start/stop/pause/resume/get-state/wait-for)
@@ -178,18 +183,18 @@ class TestConnection(McpTestCase):
         """Test that expected minimum number of tools are available."""
         tools = self.client.list_tools()
         tool_names = [t["name"] for t in tools]
-        # After StateTree addition: 11 read + 22 write = 33 tools
-        # Read: 10 original + 1 query-statetree = 11
+        # After v1.17.0: 12 read + 22 write = 34 tools
+        # Read: 11 original + 1 get-asset-diff = 12
         # Write: 18 original + 4 StateTree write tools = 22
-        self.assertGreaterEqual(len(tool_names), 33,
-            f"Expected at least 33 tools, got {len(tool_names)}")
+        self.assertGreaterEqual(len(tool_names), 34,
+            f"Expected at least 34 tools, got {len(tool_names)}")
 
     def test_required_read_tools_exist(self):
         """Test that essential read tools are registered (after consolidation)."""
         tools = self.client.list_tools()
         tool_names = {t["name"] for t in tools}
 
-        # New consolidated tools (11 read tools total)
+        # New consolidated tools (12 read tools total as of v1.17.0)
         required_tools = [
             "query-blueprint",        # Merged: analyze-blueprint, get-blueprint-functions, etc.
             "query-blueprint-graph",  # Merged: get-blueprint-graph, get-blueprint-node, etc.
@@ -198,6 +203,7 @@ class TestConnection(McpTestCase):
             "query-asset",            # Merged: search-assets, inspect-asset, inspect-data-asset
             "query-material",         # Merged: get-material-graph, get-material-parameters
             "query-statetree",        # StateTree query tool
+            "get-asset-diff",         # v1.17.0: SCM binary asset diff
             "get-class-hierarchy",
             "find-references",
             "inspect-widget-blueprint",
@@ -4035,6 +4041,344 @@ class TestPIEInput(McpTestCase):
             self.client.call_tool("pie-input", {
                 "action": "invalid_action_type"
             })
+
+
+class TestGetAssetDiff(McpTestCase):
+    """Tests for SCM asset diff tool (v1.17.0).
+
+    The get-asset-diff tool compares binary Unreal assets against SCM base versions.
+    Note: These tests require a project with SCM (Git or Perforce) configured,
+    and at least one modified asset to produce meaningful diff results.
+    """
+
+    def test_tool_exists(self):
+        """Test that get-asset-diff tool is registered."""
+        tools = self.client.list_tools()
+        tool_names = [t["name"] for t in tools]
+        self.assertIn("get-asset-diff", tool_names)
+
+    def test_tool_has_correct_schema(self):
+        """Test that get-asset-diff has correct input schema."""
+        tools = self.client.list_tools()
+        tool = next((t for t in tools if t["name"] == "get-asset-diff"), None)
+        self.assertIsNotNone(tool)
+
+        schema = tool.get("inputSchema", {})
+        properties = schema.get("properties", {})
+
+        # Check required parameters
+        self.assertIn("asset_path", properties)
+
+        # Check optional parameters
+        self.assertIn("scm_type", properties)
+        self.assertIn("base_revision", properties)
+
+        # Check scm_type enum values
+        scm_type = properties.get("scm_type", {})
+        if "enum" in scm_type:
+            enum_values = scm_type["enum"]
+            self.assertIn("git", enum_values)
+            self.assertIn("perforce", enum_values)
+            self.assertIn("auto", enum_values)
+
+    def test_missing_asset_path_error(self):
+        """Test that missing asset_path returns an error."""
+        with self.assertRaises(McpError) as context:
+            self.client.call_tool("get-asset-diff", {})
+        self.assertIn("asset_path", str(context.exception).lower())
+
+    def test_nonexistent_asset_error(self):
+        """Test that nonexistent asset returns an error."""
+        with self.assertRaises(McpError) as context:
+            self.client.call_tool("get-asset-diff", {
+                "asset_path": "/Game/NonExistent/BP_DoesNotExist"
+            })
+        # Should get an error about file not found or asset not loadable
+        error_msg = str(context.exception).lower()
+        self.assertTrue(
+            "not found" in error_msg or
+            "failed to load" in error_msg or
+            "could not resolve" in error_msg,
+            f"Unexpected error message: {context.exception}"
+        )
+
+    def test_diff_with_auto_scm_detection(self):
+        """Test diff with automatic SCM detection.
+
+        This test may be skipped if:
+        - No SCM is configured for the project
+        - No Blueprint assets exist in the project
+        """
+        # Try to find any Blueprint in the project
+        try:
+            search_result = self.client.call_tool("query-asset", {
+                "query": "*",
+                "class": "Blueprint",
+                "limit": 1
+            })
+        except McpError:
+            self.skipTest("Could not search for assets")
+            return
+
+        assets = search_result.get("assets", [])
+        if not assets:
+            self.skipTest("No Blueprint assets found in project")
+            return
+
+        asset_path = assets[0]["path"]
+
+        # Try to diff - may fail if no SCM or file not in SCM
+        try:
+            result = self.client.call_tool("get-asset-diff", {
+                "asset_path": asset_path,
+                "scm_type": "auto"
+            })
+        except McpError as e:
+            # Expected if no SCM configured
+            if "could not detect scm" in str(e).lower():
+                self.skipTest("No SCM detected for project")
+            elif "failed to extract" in str(e).lower():
+                self.skipTest("Asset not tracked by SCM")
+            else:
+                raise
+
+        # Verify response structure
+        self.assertIn("asset_path", result)
+        self.assertIn("scm_type", result)
+        self.assertIn("has_changes", result)
+
+    def test_diff_with_explicit_git(self):
+        """Test diff with explicit Git SCM type."""
+        # Search for a Blueprint
+        try:
+            search_result = self.client.call_tool("query-asset", {
+                "query": "*",
+                "class": "Blueprint",
+                "limit": 1
+            })
+        except McpError:
+            self.skipTest("Could not search for assets")
+            return
+
+        assets = search_result.get("assets", [])
+        if not assets:
+            self.skipTest("No Blueprint assets found")
+            return
+
+        asset_path = assets[0]["path"]
+
+        try:
+            result = self.client.call_tool("get-asset-diff", {
+                "asset_path": asset_path,
+                "scm_type": "git",
+                "base_revision": "HEAD"
+            })
+        except McpError as e:
+            # Expected if not a Git project
+            error_msg = str(e).lower()
+            if "git failed" in error_msg or "failed to extract" in error_msg:
+                self.skipTest("Project is not a Git repository")
+            else:
+                raise
+
+        self.assertIn("scm_type", result)
+        self.assertEqual(result.get("scm_type"), "git")
+
+    def test_diff_with_explicit_perforce(self):
+        """Test diff with explicit Perforce SCM type."""
+        # Search for a Blueprint
+        try:
+            search_result = self.client.call_tool("query-asset", {
+                "query": "*",
+                "class": "Blueprint",
+                "limit": 1
+            })
+        except McpError:
+            self.skipTest("Could not search for assets")
+            return
+
+        assets = search_result.get("assets", [])
+        if not assets:
+            self.skipTest("No Blueprint assets found")
+            return
+
+        asset_path = assets[0]["path"]
+
+        try:
+            result = self.client.call_tool("get-asset-diff", {
+                "asset_path": asset_path,
+                "scm_type": "perforce",
+                "base_revision": "#have"
+            })
+        except McpError as e:
+            # Expected if not a Perforce workspace
+            error_msg = str(e).lower()
+            if "perforce failed" in error_msg or "failed to extract" in error_msg:
+                self.skipTest("Project is not a Perforce workspace")
+            else:
+                raise
+
+        self.assertIn("scm_type", result)
+        self.assertEqual(result.get("scm_type"), "perforce")
+
+    def test_diff_response_structure_blueprint(self):
+        """Test that Blueprint diff returns expected structure."""
+        # This test requires a project with Git and a committed Blueprint
+        try:
+            search_result = self.client.call_tool("query-asset", {
+                "query": "*",
+                "class": "Blueprint",
+                "limit": 1
+            })
+        except McpError:
+            self.skipTest("Could not search for assets")
+            return
+
+        assets = search_result.get("assets", [])
+        if not assets:
+            self.skipTest("No Blueprint assets found")
+            return
+
+        asset_path = assets[0]["path"]
+
+        try:
+            result = self.client.call_tool("get-asset-diff", {
+                "asset_path": asset_path
+            })
+        except McpError:
+            self.skipTest("Could not diff asset (SCM not configured)")
+            return
+
+        # Check basic response fields
+        self.assertIn("asset_path", result)
+        self.assertIn("asset_type", result)
+        self.assertIn("has_changes", result)
+        self.assertIn("total_changes", result)
+        self.assertIn("changes", result)
+
+        # For Blueprints, check change categories
+        changes = result.get("changes", {})
+        # At minimum we expect these keys to exist (even if empty)
+        expected_categories = ["variables", "functions", "components"]
+        for category in expected_categories:
+            if category in changes:
+                cat_data = changes[category]
+                # Each category should have added/removed/modified arrays
+                self.assertIn("added", cat_data)
+                self.assertIn("removed", cat_data)
+
+    def test_diff_datatable(self):
+        """Test diffing a DataTable asset."""
+        try:
+            search_result = self.client.call_tool("query-asset", {
+                "query": "*",
+                "class": "DataTable",
+                "limit": 1
+            })
+        except McpError:
+            self.skipTest("Could not search for DataTables")
+            return
+
+        assets = search_result.get("assets", [])
+        if not assets:
+            self.skipTest("No DataTable assets found")
+            return
+
+        asset_path = assets[0]["path"]
+
+        try:
+            result = self.client.call_tool("get-asset-diff", {
+                "asset_path": asset_path
+            })
+        except McpError:
+            self.skipTest("Could not diff DataTable (SCM not configured)")
+            return
+
+        # DataTable diff should have row-based changes
+        self.assertIn("changes", result)
+        changes = result.get("changes", {})
+
+        # DataTable changes have added/removed/modified rows
+        if changes:
+            self.assertTrue(
+                "added" in changes or
+                "removed" in changes or
+                "modified" in changes,
+                "DataTable diff should contain row change information"
+            )
+
+    def test_diff_material(self):
+        """Test diffing a Material asset."""
+        try:
+            search_result = self.client.call_tool("query-asset", {
+                "query": "*",
+                "class": "Material",
+                "limit": 1
+            })
+        except McpError:
+            self.skipTest("Could not search for Materials")
+            return
+
+        assets = search_result.get("assets", [])
+        if not assets:
+            self.skipTest("No Material assets found")
+            return
+
+        asset_path = assets[0]["path"]
+
+        try:
+            result = self.client.call_tool("get-asset-diff", {
+                "asset_path": asset_path
+            })
+        except McpError:
+            self.skipTest("Could not diff Material (SCM not configured)")
+            return
+
+        self.assertIn("changes", result)
+        self.assertIn("has_changes", result)
+
+    def test_diff_no_changes(self):
+        """Test that unchanged asset returns has_changes: false.
+
+        This test is informational - if an asset hasn't changed from
+        the base version, we should get has_changes: false.
+        """
+        try:
+            search_result = self.client.call_tool("query-asset", {
+                "query": "*",
+                "class": "Blueprint",
+                "limit": 5
+            })
+        except McpError:
+            self.skipTest("Could not search for assets")
+            return
+
+        assets = search_result.get("assets", [])
+        if not assets:
+            self.skipTest("No assets found")
+            return
+
+        # Try multiple assets to find one with no changes
+        for asset in assets:
+            try:
+                result = self.client.call_tool("get-asset-diff", {
+                    "asset_path": asset["path"]
+                })
+
+                # Just verify the response is valid
+                self.assertIn("has_changes", result)
+                self.assertIsInstance(result["has_changes"], bool)
+
+                # If we find an unchanged asset, that's a successful test
+                if not result["has_changes"]:
+                    self.assertEqual(result["total_changes"], 0)
+                    return  # Success
+
+            except McpError:
+                continue  # Try next asset
+
+        # If all assets have changes or couldn't be diffed, that's okay
+        self.skipTest("All tested assets have changes or couldn't be diffed")
 
 
 if __name__ == "__main__":
