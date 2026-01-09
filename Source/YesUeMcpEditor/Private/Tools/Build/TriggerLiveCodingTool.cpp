@@ -4,6 +4,7 @@
 #include "YesUeMcpEditor.h"
 #include "Engine/Engine.h"
 #include "Modules/ModuleManager.h"
+#include "Log/McpLogCapture.h"
 
 // Live Coding module (Windows only)
 #if PLATFORM_WINDOWS
@@ -85,6 +86,8 @@ FMcpToolResult UTriggerLiveCodingTool::ExecuteSynchronous(ILiveCodingModule* Liv
 {
 	UE_LOG(LogYesUeMcp, Log, TEXT("trigger-live-coding: Starting synchronous compilation..."));
 
+	// Record start time for log filtering
+	const FDateTime CompilationStartTime = FDateTime::Now();
 	const double StartTime = FPlatformTime::Seconds();
 
 	// Use WaitForCompletion flag - this blocks until compilation finishes
@@ -92,6 +95,27 @@ FMcpToolResult UTriggerLiveCodingTool::ExecuteSynchronous(ILiveCodingModule* Liv
 	bool bStarted = LiveCodingModule->Compile(ELiveCodingCompileFlags::WaitForCompletion, &CompileResult);
 
 	const double CompilationTime = FPlatformTime::Seconds() - StartTime;
+
+	// Check Output Log for compilation errors (fallback verification)
+	// The UE API may not always return Failure status even when compilation fails
+	TArray<FMcpLogEntry> RecentErrors = FMcpLogCapture::Get().GetLogs(
+		TEXT("LogLiveCoding"),
+		ELogVerbosity::Error,
+		20,  // Limit
+		TEXT("")  // No search filter
+	);
+
+	// Filter to only entries after compilation started
+	TArray<FString> CompilationErrors;
+	for (const FMcpLogEntry& Entry : RecentErrors)
+	{
+		if (Entry.Timestamp >= CompilationStartTime)
+		{
+			CompilationErrors.Add(Entry.Message);
+		}
+	}
+
+	const bool bHasLogErrors = CompilationErrors.Num() > 0;
 
 	// Build result based on CompileResult
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
@@ -106,10 +130,21 @@ FMcpToolResult UTriggerLiveCodingTool::ExecuteSynchronous(ILiveCodingModule* Liv
 	switch (CompileResult)
 	{
 	case ELiveCodingCompileResult::Success:
-		bSuccess = true;
-		StatusStr = TEXT("completed");
-		MessageStr = FString::Printf(TEXT("Live Coding compilation completed successfully in %.1fs"), CompilationTime);
-		UE_LOG(LogYesUeMcp, Log, TEXT("trigger-live-coding: Compilation successful (%.1fs)"), CompilationTime);
+		if (bHasLogErrors)
+		{
+			// Override: API said success but logs show errors
+			bSuccess = false;
+			StatusStr = TEXT("failed");
+			MessageStr = FString::Printf(TEXT("Live Coding reported success but errors found in log (%d errors)"), CompilationErrors.Num());
+			UE_LOG(LogYesUeMcp, Warning, TEXT("trigger-live-coding: API reported success but found %d errors in log"), CompilationErrors.Num());
+		}
+		else
+		{
+			bSuccess = true;
+			StatusStr = TEXT("completed");
+			MessageStr = FString::Printf(TEXT("Live Coding compilation completed successfully in %.1fs"), CompilationTime);
+			UE_LOG(LogYesUeMcp, Log, TEXT("trigger-live-coding: Compilation successful (%.1fs)"), CompilationTime);
+		}
 		break;
 
 	case ELiveCodingCompileResult::NoChanges:
@@ -159,6 +194,17 @@ FMcpToolResult UTriggerLiveCodingTool::ExecuteSynchronous(ILiveCodingModule* Liv
 	Result->SetBoolField(TEXT("success"), bSuccess);
 	Result->SetStringField(TEXT("status"), StatusStr);
 	Result->SetStringField(TEXT("message"), MessageStr);
+
+	// Include error messages if any were captured
+	if (CompilationErrors.Num() > 0)
+	{
+		TArray<TSharedPtr<FJsonValue>> ErrorArray;
+		for (const FString& Error : CompilationErrors)
+		{
+			ErrorArray.Add(MakeShareable(new FJsonValueString(Error)));
+		}
+		Result->SetArrayField(TEXT("errors"), ErrorArray);
+	}
 
 	return FMcpToolResult::Json(Result);
 }
