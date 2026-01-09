@@ -11,7 +11,7 @@
 
 FString UDeleteActorTool::GetToolDescription() const
 {
-	return TEXT("Delete an actor from the currently open level.");
+	return TEXT("Delete an actor from the editor level or PIE world. Use 'world' param: 'editor' (default) or 'pie'.");
 }
 
 TMap<FString, FMcpSchemaProperty> UDeleteActorTool::GetInputSchema() const
@@ -23,6 +23,12 @@ TMap<FString, FMcpSchemaProperty> UDeleteActorTool::GetInputSchema() const
 	ActorName.Description = TEXT("Actor name or label to delete");
 	ActorName.bRequired = true;
 	Schema.Add(TEXT("actor_name"), ActorName);
+
+	FMcpSchemaProperty WorldParam;
+	WorldParam.Type = TEXT("string");
+	WorldParam.Description = TEXT("Target world: 'editor' (default) or 'pie' for Play-In-Editor world");
+	WorldParam.bRequired = false;
+	Schema.Add(TEXT("world"), WorldParam);
 
 	return Schema;
 }
@@ -37,19 +43,41 @@ FMcpToolResult UDeleteActorTool::Execute(
 	const FMcpToolContext& Context)
 {
 	FString ActorName = GetStringArgOrDefault(Arguments, TEXT("actor_name"));
+	FString WorldParam = GetStringArgOrDefault(Arguments, TEXT("world"), TEXT("editor"));
 
 	if (ActorName.IsEmpty())
 	{
 		return FMcpToolResult::Error(TEXT("actor_name is required"));
 	}
 
-	UE_LOG(LogYesUeMcp, Log, TEXT("delete-actor: %s"), *ActorName);
+	const bool bUsePIE = WorldParam.Equals(TEXT("pie"), ESearchCase::IgnoreCase);
 
-	// Get the editor world
-	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-	if (!World)
+	UE_LOG(LogYesUeMcp, Log, TEXT("delete-actor: %s in %s world"), *ActorName, bUsePIE ? TEXT("PIE") : TEXT("editor"));
+
+	// Get the target world
+	UWorld* World = nullptr;
+	if (bUsePIE)
 	{
-		return FMcpToolResult::Error(TEXT("No world available. Open a level first."));
+		for (const FWorldContext& WorldContext : GEngine->GetWorldContexts())
+		{
+			if (WorldContext.WorldType == EWorldType::PIE && WorldContext.World())
+			{
+				World = WorldContext.World();
+				break;
+			}
+		}
+		if (!World)
+		{
+			return FMcpToolResult::Error(TEXT("No PIE session running. Use pie-session action:start first."));
+		}
+	}
+	else
+	{
+		World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+		if (!World)
+		{
+			return FMcpToolResult::Error(TEXT("No editor world available. Open a level first."));
+		}
 	}
 
 	// Find the actor
@@ -84,19 +112,26 @@ FMcpToolResult UDeleteActorTool::Execute(
 	// Destroy the actor
 	bool bDestroyed = World->DestroyActor(FoundActor);
 
-	// Mark level as dirty
-	World->MarkPackageDirty();
+	// Mark level as dirty (only for editor world)
+	if (!bUsePIE)
+	{
+		World->MarkPackageDirty();
+	}
 
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 	Result->SetStringField(TEXT("actor_name"), DeletedName);
+	Result->SetStringField(TEXT("world"), bUsePIE ? TEXT("pie") : TEXT("editor"));
 
 	if (bDestroyed)
 	{
 		Result->SetBoolField(TEXT("success"), true);
 		Result->SetStringField(TEXT("status"), TEXT("deleted"));
-		Result->SetBoolField(TEXT("needs_save"), true);
+		if (!bUsePIE)
+		{
+			Result->SetBoolField(TEXT("needs_save"), true);
+		}
 
-		UE_LOG(LogYesUeMcp, Log, TEXT("delete-actor: Deleted %s"), *DeletedName);
+		UE_LOG(LogYesUeMcp, Log, TEXT("delete-actor: Deleted %s in %s world"), *DeletedName, bUsePIE ? TEXT("PIE") : TEXT("editor"));
 	}
 	else
 	{

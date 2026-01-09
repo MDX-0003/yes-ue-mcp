@@ -18,7 +18,7 @@
 
 FString USpawnActorTool::GetToolDescription() const
 {
-	return TEXT("Spawn an actor in the currently open level. Supports native classes and Blueprint actors.");
+	return TEXT("Spawn an actor in the editor level or PIE world. Supports native classes and Blueprint actors. Use 'world' param: 'editor' (default) or 'pie'.");
 }
 
 TMap<FString, FMcpSchemaProperty> USpawnActorTool::GetInputSchema() const
@@ -51,6 +51,12 @@ TMap<FString, FMcpSchemaProperty> USpawnActorTool::GetInputSchema() const
 	Label.bRequired = false;
 	Schema.Add(TEXT("label"), Label);
 
+	FMcpSchemaProperty WorldParam;
+	WorldParam.Type = TEXT("string");
+	WorldParam.Description = TEXT("Target world: 'editor' (default) or 'pie' for Play-In-Editor world");
+	WorldParam.bRequired = false;
+	Schema.Add(TEXT("world"), WorldParam);
+
 	return Schema;
 }
 
@@ -65,6 +71,7 @@ FMcpToolResult USpawnActorTool::Execute(
 {
 	FString ActorClass = GetStringArgOrDefault(Arguments, TEXT("actor_class"));
 	FString Label = GetStringArgOrDefault(Arguments, TEXT("label"));
+	FString WorldParam = GetStringArgOrDefault(Arguments, TEXT("world"), TEXT("editor"));
 
 	// Get location
 	FVector Location(0, 0, 0);
@@ -91,14 +98,37 @@ FMcpToolResult USpawnActorTool::Execute(
 		return FMcpToolResult::Error(TEXT("actor_class is required"));
 	}
 
-	UE_LOG(LogYesUeMcp, Log, TEXT("spawn-actor: %s at (%f, %f, %f)"),
-		*ActorClass, Location.X, Location.Y, Location.Z);
+	const bool bUsePIE = WorldParam.Equals(TEXT("pie"), ESearchCase::IgnoreCase);
 
-	// Get the editor world
-	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-	if (!World)
+	UE_LOG(LogYesUeMcp, Log, TEXT("spawn-actor: %s at (%f, %f, %f) in %s world"),
+		*ActorClass, Location.X, Location.Y, Location.Z, bUsePIE ? TEXT("PIE") : TEXT("editor"));
+
+	// Get the target world
+	UWorld* World = nullptr;
+	if (bUsePIE)
 	{
-		return FMcpToolResult::Error(TEXT("No world available. Open a level first."));
+		// Find PIE world
+		for (const FWorldContext& WorldContext : GEngine->GetWorldContexts())
+		{
+			if (WorldContext.WorldType == EWorldType::PIE && WorldContext.World())
+			{
+				World = WorldContext.World();
+				break;
+			}
+		}
+		if (!World)
+		{
+			return FMcpToolResult::Error(TEXT("No PIE session running. Use pie-session action:start first."));
+		}
+	}
+	else
+	{
+		// Get editor world
+		World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+		if (!World)
+		{
+			return FMcpToolResult::Error(TEXT("No editor world available. Open a level first."));
+		}
 	}
 
 	// Begin transaction
@@ -179,20 +209,27 @@ FMcpToolResult USpawnActorTool::Execute(
 		return FMcpToolResult::Error(TEXT("Failed to spawn actor"));
 	}
 
-	// Set label if provided
-	if (!Label.IsEmpty())
+	// Set label if provided (only works in editor world)
+	if (!Label.IsEmpty() && !bUsePIE)
 	{
 		SpawnedActor->SetActorLabel(Label);
 	}
 
-	// Mark level as dirty
-	World->MarkPackageDirty();
+	// Mark level as dirty (only for editor world)
+	if (!bUsePIE)
+	{
+		World->MarkPackageDirty();
+	}
 
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 	Result->SetBoolField(TEXT("success"), true);
 	Result->SetStringField(TEXT("actor_name"), SpawnedActor->GetName());
-	Result->SetStringField(TEXT("actor_label"), SpawnedActor->GetActorLabel());
+	if (!bUsePIE)
+	{
+		Result->SetStringField(TEXT("actor_label"), SpawnedActor->GetActorLabel());
+	}
 	Result->SetStringField(TEXT("actor_class"), SpawnClass->GetName());
+	Result->SetStringField(TEXT("world"), bUsePIE ? TEXT("pie") : TEXT("editor"));
 
 	TArray<TSharedPtr<FJsonValue>> LocationJson;
 	LocationJson.Add(MakeShared<FJsonValueNumber>(Location.X));
@@ -200,9 +237,12 @@ FMcpToolResult USpawnActorTool::Execute(
 	LocationJson.Add(MakeShared<FJsonValueNumber>(Location.Z));
 	Result->SetArrayField(TEXT("location"), LocationJson);
 
-	Result->SetBoolField(TEXT("needs_save"), true);
+	if (!bUsePIE)
+	{
+		Result->SetBoolField(TEXT("needs_save"), true);
+	}
 
-	UE_LOG(LogYesUeMcp, Log, TEXT("spawn-actor: Spawned %s"), *SpawnedActor->GetName());
+	UE_LOG(LogYesUeMcp, Log, TEXT("spawn-actor: Spawned %s in %s world"), *SpawnedActor->GetName(), bUsePIE ? TEXT("PIE") : TEXT("editor"));
 
 	return FMcpToolResult::Json(Result);
 }

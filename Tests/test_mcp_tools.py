@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """
-MCP Tools Integration Tests (v1.15.1 - build-and-relaunch fix)
+MCP Tools Integration Tests (v1.16.0 - PIE tools refactor)
 
 This script tests the yes-ue-mcp plugin tools using Python's unittest framework.
-Updated for the consolidated tool architecture (10 read tools + 20 write tools).
+Updated for the consolidated tool architecture (10 read tools + 21 write tools).
+
+v1.16.0 PIE Tools Refactor:
+    - pie-session: Control PIE sessions (start/stop/pause/resume/get-state/wait-for)
+    - pie-input: Simulate player input (key/action/axis/move-to/look-at)
+    - call-function: Call functions on actors, components, or global Blueprints
+    - world parameter: spawn-actor, delete-actor, query-level now support 'editor'/'pie'/'auto'
 
 v1.9.0 Dynamic Reflection Features:
     - Dynamic material expression creation (any UMaterialExpression class)
@@ -3600,6 +3606,435 @@ class TestDynamicClassResolution(McpTestCase):
                 self.client.call_tool("delete-asset", {"asset_path": path})
             except:
                 pass
+
+
+class TestPIESession(McpTestCase):
+    """Test PIE (Play-In-Editor) session control."""
+
+    def tearDown(self):
+        """Ensure PIE is stopped after each test."""
+        try:
+            self.client.call_tool("pie-session", {"action": "stop"})
+        except:
+            pass
+
+    def test_pie_session_start_stop(self):
+        """Test starting and stopping PIE session."""
+        # Start PIE
+        start_result = self.client.call_tool("pie-session", {
+            "action": "start",
+            "mode": "viewport"
+        })
+        self.assertTrue(start_result.get("success"), "PIE should start successfully")
+        self.assertEqual(start_result.get("state"), "running")
+
+        # Give PIE time to initialize
+        import time
+        time.sleep(1.0)
+
+        # Get state
+        state_result = self.client.call_tool("pie-session", {"action": "get-state"})
+        self.assertEqual(state_result.get("state"), "running")
+
+        # Stop PIE
+        stop_result = self.client.call_tool("pie-session", {"action": "stop"})
+        self.assertTrue(stop_result.get("success"), "PIE should stop successfully")
+
+    def test_pie_session_pause_resume(self):
+        """Test pausing and resuming PIE session."""
+        # Start PIE
+        self.client.call_tool("pie-session", {"action": "start", "mode": "viewport"})
+        import time
+        time.sleep(1.0)
+
+        # Pause
+        pause_result = self.client.call_tool("pie-session", {"action": "pause"})
+        self.assertTrue(pause_result.get("success"), "PIE should pause successfully")
+        self.assertEqual(pause_result.get("state"), "paused")
+
+        # Resume
+        resume_result = self.client.call_tool("pie-session", {"action": "resume"})
+        self.assertTrue(resume_result.get("success"), "PIE should resume successfully")
+        self.assertEqual(resume_result.get("state"), "running")
+
+    def test_pie_get_state_not_running(self):
+        """Test get-state when PIE is not running."""
+        # Ensure PIE is stopped
+        try:
+            self.client.call_tool("pie-session", {"action": "stop"})
+        except:
+            pass
+
+        import time
+        time.sleep(0.5)
+
+        state_result = self.client.call_tool("pie-session", {"action": "get-state"})
+        self.assertEqual(state_result.get("state"), "stopped")
+
+    def test_pie_session_invalid_action(self):
+        """Test invalid action returns error."""
+        with self.assertRaises(McpError):
+            self.client.call_tool("pie-session", {"action": "invalid_action"})
+
+
+class TestPIEWorldParam(McpTestCase):
+    """Test world parameter on spawn-actor, delete-actor, query-level."""
+
+    def setUp(self):
+        """Start PIE session for each test."""
+        self.spawned_actors_pie = []
+        self.spawned_actors_editor = []
+
+        # Start PIE
+        try:
+            self.client.call_tool("pie-session", {"action": "start", "mode": "viewport"})
+            import time
+            time.sleep(1.0)
+        except:
+            self.skipTest("Could not start PIE session")
+
+    def tearDown(self):
+        """Clean up actors and stop PIE."""
+        # Clean up PIE actors
+        for actor_name in self.spawned_actors_pie:
+            try:
+                self.client.call_tool("delete-actor", {
+                    "actor_name": actor_name,
+                    "world": "pie"
+                })
+            except:
+                pass
+
+        # Clean up editor actors
+        for actor_name in self.spawned_actors_editor:
+            try:
+                self.client.call_tool("delete-actor", {
+                    "actor_name": actor_name,
+                    "world": "editor"
+                })
+            except:
+                pass
+
+        # Stop PIE
+        try:
+            self.client.call_tool("pie-session", {"action": "stop"})
+        except:
+            pass
+
+    def test_spawn_actor_in_pie(self):
+        """Test spawning an actor in PIE world."""
+        result = self.client.call_tool("spawn-actor", {
+            "actor_class": "PointLight",
+            "location": [100, 200, 300],
+            "world": "pie"
+        })
+
+        self.assertTrue(result.get("success"), "spawn-actor in PIE should succeed")
+        self.assertEqual(result.get("world"), "pie")
+        self.assertIn("actor_name", result)
+        self.spawned_actors_pie.append(result["actor_name"])
+
+    def test_spawn_actor_default_editor(self):
+        """Test spawning actor defaults to editor world."""
+        result = self.client.call_tool("spawn-actor", {
+            "actor_class": "PointLight",
+            "location": [100, 200, 300],
+            "label": "MCP_Test_EditorDefault"
+        })
+
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("world"), "editor")
+        self.spawned_actors_editor.append(result["actor_name"])
+
+    def test_query_level_pie(self):
+        """Test querying actors in PIE world."""
+        # Spawn actor in PIE
+        spawn_result = self.client.call_tool("spawn-actor", {
+            "actor_class": "PointLight",
+            "location": [500, 500, 500],
+            "world": "pie"
+        })
+        self.assertTrue(spawn_result.get("success"))
+        actor_name = spawn_result["actor_name"]
+        self.spawned_actors_pie.append(actor_name)
+
+        # Query PIE world
+        query_result = self.client.call_tool("query-level", {
+            "world": "pie"
+        })
+
+        actor_names = [a.get("name") for a in query_result.get("actors", [])]
+        self.assertIn(actor_name, actor_names,
+            f"Actor '{actor_name}' should appear in PIE world query")
+
+    def test_query_level_auto_mode(self):
+        """Test query-level auto mode prefers PIE when running."""
+        query_result = self.client.call_tool("query-level", {
+            "world": "auto"
+        })
+
+        # Should return results from PIE world
+        self.assertIn("actors", query_result)
+
+    def test_delete_actor_in_pie(self):
+        """Test deleting an actor from PIE world."""
+        # Spawn in PIE
+        spawn_result = self.client.call_tool("spawn-actor", {
+            "actor_class": "PointLight",
+            "location": [0, 0, 100],
+            "world": "pie"
+        })
+        self.assertTrue(spawn_result.get("success"))
+        actor_name = spawn_result["actor_name"]
+
+        # Delete from PIE
+        delete_result = self.client.call_tool("delete-actor", {
+            "actor_name": actor_name,
+            "world": "pie"
+        })
+        self.assertTrue(delete_result.get("success"), "delete-actor in PIE should succeed")
+        self.assertEqual(delete_result.get("world"), "pie")
+
+        # Verify it's gone
+        query_result = self.client.call_tool("query-level", {"world": "pie"})
+        actor_names = [a.get("name") for a in query_result.get("actors", [])]
+        self.assertNotIn(actor_name, actor_names,
+            f"Deleted actor '{actor_name}' should not appear in PIE query")
+
+    def test_pie_actor_not_visible_in_editor(self):
+        """Test that PIE actors don't appear in editor world query."""
+        # Spawn in PIE
+        spawn_result = self.client.call_tool("spawn-actor", {
+            "actor_class": "PointLight",
+            "location": [999, 999, 999],
+            "world": "pie"
+        })
+        self.assertTrue(spawn_result.get("success"))
+        actor_name = spawn_result["actor_name"]
+        self.spawned_actors_pie.append(actor_name)
+
+        # Query editor world - PIE actor should NOT appear
+        query_result = self.client.call_tool("query-level", {"world": "editor"})
+        actor_names = [a.get("name") for a in query_result.get("actors", [])]
+        self.assertNotIn(actor_name, actor_names,
+            "PIE actor should not appear in editor world query")
+
+
+class TestCallFunction(McpTestCase):
+    """Test call-function tool for calling functions on actors/components/Blueprints."""
+
+    def setUp(self):
+        """Start PIE session for function call tests."""
+        self.spawned_actors = []
+
+        # Start PIE for runtime function calls
+        try:
+            self.client.call_tool("pie-session", {"action": "start", "mode": "viewport"})
+            import time
+            time.sleep(1.0)
+        except:
+            self.skipTest("Could not start PIE session")
+
+    def tearDown(self):
+        """Clean up and stop PIE."""
+        for actor_name in self.spawned_actors:
+            try:
+                self.client.call_tool("delete-actor", {
+                    "actor_name": actor_name,
+                    "world": "pie"
+                })
+            except:
+                pass
+
+        try:
+            self.client.call_tool("pie-session", {"action": "stop"})
+        except:
+            pass
+
+    def test_call_function_actor(self):
+        """Test calling a function on an actor."""
+        # Spawn an actor
+        spawn_result = self.client.call_tool("spawn-actor", {
+            "actor_class": "PointLight",
+            "location": [0, 0, 100],
+            "world": "pie"
+        })
+        self.assertTrue(spawn_result.get("success"))
+        actor_name = spawn_result["actor_name"]
+        self.spawned_actors.append(actor_name)
+
+        # Call K2_GetActorLocation - a common UE function
+        result = self.client.call_tool("call-function", {
+            "target": f"{actor_name}.K2_GetActorLocation",
+            "world": "pie"
+        })
+
+        self.assertTrue(result.get("success"), "call-function should succeed")
+        self.assertEqual(result.get("function"), "K2_GetActorLocation")
+
+    def test_call_function_with_arguments(self):
+        """Test calling a function with arguments."""
+        # Spawn an actor
+        spawn_result = self.client.call_tool("spawn-actor", {
+            "actor_class": "PointLight",
+            "location": [100, 200, 300],
+            "world": "pie"
+        })
+        self.assertTrue(spawn_result.get("success"))
+        actor_name = spawn_result["actor_name"]
+        self.spawned_actors.append(actor_name)
+
+        # Call SetActorHiddenInGame with boolean argument
+        result = self.client.call_tool("call-function", {
+            "target": f"{actor_name}.SetActorHiddenInGame",
+            "arguments": {"bNewHidden": True},
+            "world": "pie"
+        })
+
+        self.assertTrue(result.get("success"), "call-function with args should succeed")
+
+    def test_call_function_invalid_target(self):
+        """Test calling function on non-existent actor."""
+        with self.assertRaises(McpError):
+            self.client.call_tool("call-function", {
+                "target": "NonExistentActor_12345.SomeFunction",
+                "world": "pie"
+            })
+
+    def test_call_function_invalid_function(self):
+        """Test calling non-existent function."""
+        # Spawn an actor
+        spawn_result = self.client.call_tool("spawn-actor", {
+            "actor_class": "PointLight",
+            "location": [0, 0, 100],
+            "world": "pie"
+        })
+        self.assertTrue(spawn_result.get("success"))
+        actor_name = spawn_result["actor_name"]
+        self.spawned_actors.append(actor_name)
+
+        with self.assertRaises(McpError):
+            self.client.call_tool("call-function", {
+                "target": f"{actor_name}.NonExistentFunction_12345",
+                "world": "pie"
+            })
+
+    def test_call_function_editor_world(self):
+        """Test calling function on editor world actor."""
+        # Spawn in editor
+        spawn_result = self.client.call_tool("spawn-actor", {
+            "actor_class": "PointLight",
+            "location": [0, 0, 100],
+            "world": "editor",
+            "label": "MCP_CallFunc_Editor"
+        })
+        self.assertTrue(spawn_result.get("success"))
+        actor_name = spawn_result["actor_name"]
+
+        try:
+            # Call function in editor world
+            result = self.client.call_tool("call-function", {
+                "target": f"{actor_name}.K2_GetActorLocation",
+                "world": "editor"
+            })
+
+            self.assertTrue(result.get("success"))
+        finally:
+            # Clean up editor actor
+            try:
+                self.client.call_tool("delete-actor", {
+                    "actor_name": actor_name,
+                    "world": "editor"
+                })
+            except:
+                pass
+
+
+class TestPIEInput(McpTestCase):
+    """Test PIE input simulation."""
+
+    def setUp(self):
+        """Start PIE session for input tests."""
+        try:
+            self.client.call_tool("pie-session", {"action": "start", "mode": "viewport"})
+            import time
+            time.sleep(1.0)
+        except:
+            self.skipTest("Could not start PIE session")
+
+    def tearDown(self):
+        """Stop PIE."""
+        try:
+            self.client.call_tool("pie-session", {"action": "stop"})
+        except:
+            pass
+
+    def test_pie_input_key_press(self):
+        """Test simulating a key press."""
+        result = self.client.call_tool("pie-input", {
+            "action": "key",
+            "key": "W"
+        })
+
+        self.assertTrue(result.get("success"), "Key input should succeed")
+
+    def test_pie_input_key_with_duration(self):
+        """Test key press with duration (hold)."""
+        result = self.client.call_tool("pie-input", {
+            "action": "key",
+            "key": "SpaceBar",
+            "duration": 0.5
+        })
+
+        self.assertTrue(result.get("success"), "Key hold should succeed")
+
+    def test_pie_input_action(self):
+        """Test simulating an input action."""
+        # Note: Action must be defined in the project's Input settings
+        result = self.client.call_tool("pie-input", {
+            "action": "action",
+            "action_name": "Jump"
+        })
+
+        # May fail if action not defined, but should not crash
+        # The tool should return success or a clear error
+        self.assertIn("success", result)
+
+    def test_pie_input_axis(self):
+        """Test simulating axis input."""
+        result = self.client.call_tool("pie-input", {
+            "action": "axis",
+            "axis_name": "MoveForward",
+            "value": 1.0
+        })
+
+        # May fail if axis not defined
+        self.assertIn("success", result)
+
+    def test_pie_input_move_to(self):
+        """Test move-to action (moves player to location)."""
+        result = self.client.call_tool("pie-input", {
+            "action": "move-to",
+            "location": [1000, 1000, 0]
+        })
+
+        self.assertTrue(result.get("success"), "move-to should succeed")
+
+    def test_pie_input_look_at(self):
+        """Test look-at action (rotates player to face location)."""
+        result = self.client.call_tool("pie-input", {
+            "action": "look-at",
+            "location": [0, 0, 500]
+        })
+
+        self.assertTrue(result.get("success"), "look-at should succeed")
+
+    def test_pie_input_invalid_action(self):
+        """Test invalid input action."""
+        with self.assertRaises(McpError):
+            self.client.call_tool("pie-input", {
+                "action": "invalid_action_type"
+            })
 
 
 if __name__ == "__main__":

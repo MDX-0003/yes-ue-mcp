@@ -77,7 +77,10 @@
       "Bash(dir \"F:\\\\src3\\\\Covenant\\\\ElpisClient\\\\Plugins\\\\yes-ue-mcp\")",
       "Bash(python -c:*)",
       "Bash(grep:*)",
-      "Bash(powershell -ExecutionPolicy Bypass -File copy_plugin.ps1)"
+      "Bash(powershell -ExecutionPolicy Bypass -File copy_plugin.ps1)",
+      "Bash(but module 'YesUeMcpEditor' depends on module 'PythonScriptPlugin'.\"\n\nAdded PythonScriptPlugin with Optional=true to allow plugin to load even\nwhen PythonScriptPlugin is not enabled.\n\nCloses #42\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(powershell -File .copy_plugin.ps1 -Target:*)",
+      "Bash(powershell -ExecutionPolicy Bypass -File ./copy_plugin.ps1 -Target Elpis)"
     ]
   },
   "enabledMcpjsonServers": [

@@ -13,8 +13,8 @@
 
 FString UQueryLevelTool::GetToolDescription() const
 {
-	return TEXT("Query actors in levels. Use 'level_path' to query any level asset without opening it (e.g., '/Game/Maps/Level2'). "
-		"Without 'level_path', queries the current editor/PIE world. "
+	return TEXT("Query actors in levels. Use 'level_path' to query any level asset without opening it. "
+		"Use 'world' param: 'editor' (default), 'pie', or 'auto'. "
 		"Returns actor names, classes, transforms, and optionally components. "
 		"When actor_name is specified, returns detailed info for that specific actor including properties.");
 }
@@ -96,11 +96,11 @@ TMap<FString, FMcpSchemaProperty> UQueryLevelTool::GetInputSchema() const
 	Schema.Add(TEXT("limit"), Limit);
 
 	// World selection parameter
-	FMcpSchemaProperty WorldType;
-	WorldType.Type = TEXT("string");
-	WorldType.Description = TEXT("Which world to query: 'auto' (PIE if running, else editor), 'pie' (PIE only), 'editor' (editor only). Default: 'auto'");
-	WorldType.bRequired = false;
-	Schema.Add(TEXT("world_type"), WorldType);
+	FMcpSchemaProperty WorldParam;
+	WorldParam.Type = TEXT("string");
+	WorldParam.Description = TEXT("Target world: 'editor' (default), 'pie' (PIE only), or 'auto' (PIE if running, else editor)");
+	WorldParam.bRequired = false;
+	Schema.Add(TEXT("world"), WorldParam);
 
 	return Schema;
 }
@@ -126,12 +126,12 @@ FMcpToolResult UQueryLevelTool::Execute(
 		return QueryExternalLevel(LevelPath, Arguments);
 	}
 
-	// Get world_type parameter: 'auto' (default), 'pie', or 'editor'
-	FString WorldTypeParam = GetStringArgOrDefault(Arguments, TEXT("world_type"), TEXT("auto")).ToLower();
+	// Get world parameter: 'editor' (default), 'pie', or 'auto'
+	FString WorldParam = GetStringArgOrDefault(Arguments, TEXT("world"), TEXT("editor")).ToLower();
 
 	UWorld* World = nullptr;
 
-	if (WorldTypeParam == TEXT("pie"))
+	if (WorldParam == TEXT("pie"))
 	{
 		// PIE only - fail if not running
 		for (const FWorldContext& WorldContext : GEngine->GetWorldContexts())
@@ -144,21 +144,12 @@ FMcpToolResult UQueryLevelTool::Execute(
 		}
 		if (!World)
 		{
-			return FMcpToolResult::Error(TEXT("PIE world requested but Play In Editor is not running"));
+			return FMcpToolResult::Error(TEXT("No PIE session running. Use pie-session action:start first."));
 		}
 	}
-	else if (WorldTypeParam == TEXT("editor"))
+	else if (WorldParam == TEXT("auto"))
 	{
-		// Editor only
-		World = GEditor->GetEditorWorldContext().World();
-		if (!World)
-		{
-			return FMcpToolResult::Error(TEXT("Editor world not available"));
-		}
-	}
-	else
-	{
-		// Auto mode (default): prefer PIE if available, else editor
+		// Auto mode: prefer PIE if available, else editor
 		for (const FWorldContext& WorldContext : GEngine->GetWorldContexts())
 		{
 			if (WorldContext.WorldType == EWorldType::PIE && WorldContext.World())
@@ -174,6 +165,15 @@ FMcpToolResult UQueryLevelTool::Execute(
 		if (!World)
 		{
 			return FMcpToolResult::Error(TEXT("No world loaded"));
+		}
+	}
+	else
+	{
+		// Editor mode (default)
+		World = GEditor->GetEditorWorldContext().World();
+		if (!World)
+		{
+			return FMcpToolResult::Error(TEXT("No editor world available. Open a level first."));
 		}
 	}
 

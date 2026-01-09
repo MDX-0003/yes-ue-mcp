@@ -49,10 +49,12 @@
 #include "Tools/Build/TriggerLiveCodingTool.h"
 #include "Tools/Build/BuildAndRelaunchTool.h"
 
-// PIE (Play-In-Editor) tools - Consolidated
+// PIE (Play-In-Editor) tools
 #include "Tools/PIE/PieSessionTool.h"
-#include "Tools/PIE/PieActorTool.h"
 #include "Tools/PIE/PieInputTool.h"
+
+// Function calling
+#include "Tools/CallFunctionTool.h"
 
 DEFINE_LOG_CATEGORY(LogYesUeMcpEditor);
 DEFINE_LOG_CATEGORY(LogYesUeMcp);
@@ -154,10 +156,12 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 	Registry.RegisterToolClass(UTriggerLiveCodingTool::StaticClass());
 	Registry.RegisterToolClass(UBuildAndRelaunchTool::StaticClass());
 
-	// PIE (Play-In-Editor) tools - Consolidated (3 tools)
+	// PIE (Play-In-Editor) tools
 	Registry.RegisterToolClass(UPieSessionTool::StaticClass());
-	Registry.RegisterToolClass(UPieActorTool::StaticClass());
 	Registry.RegisterToolClass(UPieInputTool::StaticClass());
+
+	// Function calling tool
+	Registry.RegisterToolClass(UCallFunctionTool::StaticClass());
 
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("Registered %d MCP tools"), Registry.GetToolCount());
 }

@@ -140,7 +140,9 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 - **Port:** 8080 (configurable)
 - **CORS:** Enabled for cross-origin requests
 
-## Available Tools (31 total)
+## Available Tools (34 total)
+
+**Note:** Many tools support a `world` parameter: `"editor"` (default) or `"pie"` to target the Play-In-Editor world.
 
 ### Read Tools (10) - Consolidated in v1.6.0
 
@@ -163,7 +165,7 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 #### Level Tools
 | Tool | Description |
 |------|-------------|
-| `query-level` | List actors with filtering, or get detailed info for a specific actor (use `actor_name` for detail mode). Use `include_inherited` with `include_properties` to get inherited properties from parent classes. |
+| `query-level` | List actors with filtering, or get detailed info for a specific actor (use `actor_name` for detail mode). Supports `world` param: 'editor' (default), 'pie', or 'auto'. |
 
 #### Project Tools
 | Tool | Description |
@@ -212,8 +214,8 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 #### Level Editing Tools
 | Tool | Description |
 |------|-------------|
-| `spawn-actor` | Spawn an actor in the current level (native or Blueprint class) |
-| `delete-actor` | Delete an actor from the level |
+| `spawn-actor` | Spawn an actor in editor or PIE world. Supports `world` param: 'editor' (default) or 'pie'. |
+| `delete-actor` | Delete an actor from editor or PIE world. Supports `world` param. |
 | `add-component` | Add a component to an existing actor |
 | `remove-component` | Remove a component from an actor |
 
@@ -239,6 +241,37 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 |------|-------------|
 | `trigger-live-coding` | Trigger Live Coding compilation with async/sync modes. Use `wait_for_completion=true` to wait for results with compilation time and log. Optional `timeout` param (default: 300s). Windows only. |
 | `build-and-relaunch` | Close THIS editor instance (by PID), trigger a full project build, and relaunch. Only affects the MCP-connected editor - other running editor instances are not affected. Optional params: `build_config` (Development/Debug/Shipping), `skip_relaunch` (boolean). Returns `editor_pid` in response. Windows only. |
+
+### PIE (Play-In-Editor) Tools - v1.16.0
+
+Tools for controlling PIE sessions and simulating player input. Use `spawn-actor`, `delete-actor`, `query-level` with `world: "pie"` for actor operations.
+
+| Tool | Description |
+|------|-------------|
+| `pie-session` | Control PIE sessions. Actions: `start`, `stop`, `pause`, `resume`, `get-state`, `wait-for`. |
+| `pie-input` | Simulate player input. Actions: `key`, `action`, `axis`, `move-to`, `look-at`. |
+| `call-function` | Call functions on actors, components, or global Blueprints. Supports `world` param. |
+
+#### PIE Usage Example
+```json
+// Start PIE session
+{ "tool": "pie-session", "action": "start", "mode": "viewport" }
+
+// Spawn an enemy in PIE world
+{ "tool": "spawn-actor", "actor_class": "BP_Enemy", "location": [500, 0, 100], "world": "pie" }
+
+// Simulate player attack
+{ "tool": "pie-input", "action": "key", "key": "LeftMouseButton" }
+
+// Call function on actor
+{ "tool": "call-function", "target": "BP_Enemy_0.TakeDamage", "arguments": {"DamageAmount": 25}, "world": "pie" }
+
+// Wait for enemy health to drop
+{ "tool": "pie-session", "action": "wait-for", "actor_name": "BP_Enemy_0", "property": "Health", "operator": "less_than", "expected": 100 }
+
+// Stop PIE
+{ "tool": "pie-session", "action": "stop" }
+```
 
 ## Write Tool Usage
 
