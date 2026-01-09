@@ -63,6 +63,10 @@ public class YesUeMcpEditor : ModuleRules
 			// Input
 			"InputCore",
 
+			// AI/Navigation (for PIE input tools)
+			"AIModule",
+			"NavigationSystem",
+
 			// Project Settings
 			"GameplayTags",
 			"EngineSettings",
@@ -76,7 +80,10 @@ public class YesUeMcpEditor : ModuleRules
 			"PythonScriptPlugin",
 
 			// Live Coding
-			"LiveCoding"
+			"LiveCoding",
+
+			// Source Control (for SCM diff tool)
+			"SourceControl"
 		});
 	}
 }

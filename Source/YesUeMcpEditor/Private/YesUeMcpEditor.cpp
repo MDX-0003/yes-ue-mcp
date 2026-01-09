@@ -10,6 +10,7 @@
 #include "Tools/Level/QueryLevelTool.h"
 #include "Tools/Project/ProjectInfoTool.h"
 #include "Tools/Asset/QueryAssetTool.h"
+#include "Tools/Asset/GetAssetDiffTool.h"
 #include "Tools/Material/QueryMaterialTool.h"
 #include "Tools/Analysis/ClassHierarchyTool.h"
 #include "Tools/References/FindReferencesTool.h"
@@ -95,8 +96,9 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 	// Project tools (was 2, now 1)
 	Registry.RegisterToolClass(UProjectInfoTool::StaticClass());
 
-	// Asset tools (was 3, now 1)
+	// Asset tools (was 3, now 2 - added diff tool)
 	Registry.RegisterToolClass(UQueryAssetTool::StaticClass());
+	Registry.RegisterToolClass(UGetAssetDiffTool::StaticClass());
 
 	// Material tools (was 2, now 1)
 	Registry.RegisterToolClass(UQueryMaterialTool::StaticClass());

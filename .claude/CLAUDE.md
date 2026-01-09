@@ -140,11 +140,11 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 - **Port:** 8080 (configurable)
 - **CORS:** Enabled for cross-origin requests
 
-## Available Tools (34 total)
+## Available Tools (35 total)
 
 **Note:** Many tools support a `world` parameter: `"editor"` (default) or `"pie"` to target the Play-In-Editor world.
 
-### Read Tools (10) - Consolidated in v1.6.0
+### Read Tools (11) - Consolidated in v1.6.0
 
 #### Blueprint Tools
 | Tool | Description |
@@ -156,6 +156,7 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 | Tool | Description |
 |------|-------------|
 | `query-asset` | Search or inspect assets. Use `query` param for search mode, `asset_path` for inspect mode. Handles DataTables and DataAssets. (Merged: search-assets, inspect-asset, inspect-data-asset) |
+| `get-asset-diff` | Get structured diff for binary assets (Blueprints, Materials, DataTables) against SCM base version. Supports Git and Perforce. Returns JSON showing added/removed/modified elements. |
 
 #### Material Tools
 | Tool | Description |
@@ -271,6 +272,62 @@ Tools for controlling PIE sessions and simulating player input. Use `spawn-actor
 
 // Stop PIE
 { "tool": "pie-session", "action": "stop" }
+```
+
+### SCM Asset Diff - v1.17.0
+
+Get structured diffs for binary Unreal assets against Git or Perforce base versions. Unlike visual diff tools, this returns JSON that AI assistants can consume programmatically.
+
+| Tool | Description |
+|------|-------------|
+| `get-asset-diff` | Compare current asset against SCM base version. Auto-detects Git/Perforce. |
+
+**Parameters:**
+- `asset_path` (required): Asset path (e.g., `/Game/Blueprints/BP_Player`) or file path
+- `scm_type`: `git`, `perforce`, or `auto` (default: auto-detect)
+- `base_revision`: Git commit/HEAD or P4 changelist/#have (default: HEAD/#have)
+
+**Supported Asset Types:**
+- **Blueprints**: Variables (added/removed/modified), functions, components
+- **Materials**: Expression count, parameter changes
+- **Material Instances**: Scalar/vector parameter value changes
+- **DataTables**: Row additions, removals, modifications
+- **Generic UObjects**: Property comparison via reflection
+
+#### SCM Diff Usage Example
+```json
+// Diff Blueprint against Git HEAD
+{ "tool": "get-asset-diff", "asset_path": "/Game/Blueprints/BP_Player" }
+
+// Diff against specific Git commit
+{ "tool": "get-asset-diff", "asset_path": "/Game/Blueprints/BP_Player", "base_revision": "abc123" }
+
+// Diff with explicit Perforce
+{ "tool": "get-asset-diff", "asset_path": "/Game/Data/DT_Items", "scm_type": "perforce" }
+
+// Response example
+{
+  "asset_path": "/Game/Blueprints/BP_Player",
+  "scm_type": "git",
+  "base_revision": "HEAD",
+  "has_changes": true,
+  "total_changes": 3,
+  "changes": {
+    "variables": {
+      "added": [{"name": "NewHealth", "type": "float"}],
+      "removed": [],
+      "modified": [{"name": "MaxHealth", "default_value": {"old": "100", "new": "150"}}]
+    },
+    "functions": {
+      "added": ["CalculateDamage"],
+      "removed": []
+    },
+    "components": {
+      "added": [{"name": "AudioComponent", "class": "UAudioComponent"}],
+      "removed": []
+    }
+  }
+}
 ```
 
 ## Write Tool Usage
