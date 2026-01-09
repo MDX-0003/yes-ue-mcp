@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MCP Tools Integration Tests (v1.14.0 - External Level Query)
+MCP Tools Integration Tests (v1.15.1 - build-and-relaunch fix)
 
 This script tests the yes-ue-mcp plugin tools using Python's unittest framework.
 Updated for the consolidated tool architecture (10 read tools + 20 write tools).
@@ -3382,48 +3382,154 @@ class TestTriggerLiveCoding(McpTestCase):
 
 
 class TestBuildAndRelaunch(McpTestCase):
-    """Test build-and-relaunch tool (dry-run tests only - doesn't actually close editor)."""
+    """Test build-and-relaunch tool (safe tests only - doesn't actually close editor).
 
-    def test_response_format(self):
-        """Test that response has expected fields without actually closing editor."""
-        # Note: This test is intentionally commented to prevent accidental editor shutdown
-        # Uncomment only for manual testing
-        pass
-        # result = self.client.call_tool("build-and-relaunch", {})
-        # self.assertIn("success", result)
-        # self.assertIn("status", result)
-        # self.assertIn("project", result)
-        # self.assertIn("build_config", result)
-        # self.assertIn("will_relaunch", result)
-        # self.assertEqual(result.get("build_config"), "Development")
-        # self.assertTrue(result.get("will_relaunch"))
+    IMPORTANT: Most tests are commented out because calling build-and-relaunch
+    will actually close the editor and break the test session. Only error-path
+    tests that fail BEFORE triggering shutdown can run safely.
+    """
 
-    def test_custom_build_config(self):
-        """Test custom build configuration parameter."""
-        # Note: This test is intentionally commented to prevent accidental editor shutdown
-        # Uncomment only for manual testing
-        pass
-        # result = self.client.call_tool("build-and-relaunch", {
-        #     "build_config": "Debug",
-        #     "skip_relaunch": True
-        # })
-        # self.assertTrue(result.get("success"))
-        # self.assertEqual(result.get("build_config"), "Debug")
-        # self.assertFalse(result.get("will_relaunch"))
+    def test_tool_exists(self):
+        """Test that build-and-relaunch tool is registered."""
+        tools = self.client.list_tools()
+        tool_names = [t["name"] for t in tools]
+        self.assertIn("build-and-relaunch", tool_names)
 
-    def test_invalid_build_config(self):
-        """Test that invalid build config is rejected."""
-        # This test can run safely as it should fail before triggering editor shutdown
+    def test_tool_schema(self):
+        """Test that tool has correct input schema."""
+        tools = self.client.list_tools()
+        tool = next((t for t in tools if t["name"] == "build-and-relaunch"), None)
+        self.assertIsNotNone(tool)
+
+        # Check description mentions key features
+        description = tool.get("description", "")
+        self.assertIn("editor", description.lower())
+        self.assertIn("build", description.lower())
+
+        # Check input schema
+        schema = tool.get("inputSchema", {})
+        properties = schema.get("properties", {})
+
+        # Should have build_config parameter
+        self.assertIn("build_config", properties)
+        self.assertEqual(properties["build_config"].get("type"), "string")
+
+        # Should have skip_relaunch parameter
+        self.assertIn("skip_relaunch", properties)
+        self.assertEqual(properties["skip_relaunch"].get("type"), "boolean")
+
+        # No required parameters
+        required = schema.get("required", [])
+        self.assertEqual(len(required), 0, "build-and-relaunch should have no required params")
+
+    def test_invalid_build_config_development_typo(self):
+        """Test that 'development' (lowercase) is rejected."""
+        # This test can run safely - fails before any shutdown is triggered
         try:
             result = self.client.call_tool("build-and-relaunch", {
-                "build_config": "InvalidConfig"
+                "build_config": "development"  # lowercase - should fail
             })
-            # Should return an error, not success
+            if result.get("success"):
+                self.fail("Should have rejected lowercase 'development'")
+        except Exception as e:
+            self.assertIn("Invalid build configuration", str(e))
+
+    def test_invalid_build_config_release(self):
+        """Test that 'Release' is rejected (not a valid UE config name)."""
+        try:
+            result = self.client.call_tool("build-and-relaunch", {
+                "build_config": "Release"  # Not valid - UE uses "Shipping"
+            })
+            if result.get("success"):
+                self.fail("Should have rejected 'Release'")
+        except Exception as e:
+            self.assertIn("Invalid build configuration", str(e))
+
+    def test_invalid_build_config_random_string(self):
+        """Test that random string is rejected."""
+        try:
+            result = self.client.call_tool("build-and-relaunch", {
+                "build_config": "InvalidConfig123"
+            })
             if result.get("success"):
                 self.fail("Should have rejected invalid build config")
         except Exception as e:
-            # Expected to fail
             self.assertIn("Invalid build configuration", str(e))
+
+    def test_invalid_build_config_empty_string(self):
+        """Test that empty string is rejected."""
+        try:
+            result = self.client.call_tool("build-and-relaunch", {
+                "build_config": ""
+            })
+            if result.get("success"):
+                self.fail("Should have rejected empty build config")
+        except Exception as e:
+            self.assertIn("Invalid build configuration", str(e))
+
+    # =========================================================================
+    # DANGEROUS TESTS - Uncomment ONLY for manual testing
+    # These will actually close the editor!
+    # =========================================================================
+
+    # def test_response_format(self):
+    #     """Test that response has expected fields.
+    #     WARNING: This WILL close the editor!
+    #     """
+    #     result = self.client.call_tool("build-and-relaunch", {})
+    #     self.assertIn("success", result)
+    #     self.assertIn("status", result)
+    #     self.assertIn("project", result)
+    #     self.assertIn("build_config", result)
+    #     self.assertIn("will_relaunch", result)
+    #     self.assertIn("editor_pid", result)
+    #     self.assertEqual(result.get("status"), "initiated")
+    #     self.assertEqual(result.get("build_config"), "Development")
+    #     self.assertTrue(result.get("will_relaunch"))
+    #     self.assertIsInstance(result.get("editor_pid"), int)
+
+    # def test_custom_build_config_debug(self):
+    #     """Test Debug build configuration.
+    #     WARNING: This WILL close the editor!
+    #     """
+    #     result = self.client.call_tool("build-and-relaunch", {
+    #         "build_config": "Debug",
+    #         "skip_relaunch": True
+    #     })
+    #     self.assertTrue(result.get("success"))
+    #     self.assertEqual(result.get("build_config"), "Debug")
+    #     self.assertFalse(result.get("will_relaunch"))
+
+    # def test_custom_build_config_shipping(self):
+    #     """Test Shipping build configuration.
+    #     WARNING: This WILL close the editor!
+    #     """
+    #     result = self.client.call_tool("build-and-relaunch", {
+    #         "build_config": "Shipping",
+    #         "skip_relaunch": True
+    #     })
+    #     self.assertTrue(result.get("success"))
+    #     self.assertEqual(result.get("build_config"), "Shipping")
+
+    # def test_skip_relaunch_true(self):
+    #     """Test skip_relaunch=true prevents relaunch.
+    #     WARNING: This WILL close the editor!
+    #     """
+    #     result = self.client.call_tool("build-and-relaunch", {
+    #         "skip_relaunch": True
+    #     })
+    #     self.assertTrue(result.get("success"))
+    #     self.assertFalse(result.get("will_relaunch"))
+
+    # def test_skip_relaunch_false(self):
+    #     """Test skip_relaunch=false (default) will relaunch.
+    #     WARNING: This WILL close the editor!
+    #     """
+    #     result = self.client.call_tool("build-and-relaunch", {
+    #         "skip_relaunch": False
+    #     })
+    #     self.assertTrue(result.get("success"))
+    #     self.assertTrue(result.get("will_relaunch"))
 
 
 class TestDynamicClassResolution(McpTestCase):
