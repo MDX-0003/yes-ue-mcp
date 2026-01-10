@@ -140,7 +140,7 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 - **Port:** 8080 (configurable)
 - **CORS:** Enabled for cross-origin requests
 
-## Available Tools (35 total)
+## Available Tools (28 total)
 
 **Note:** Many tools support a `world` parameter: `"editor"` (default) or `"pie"` to target the Play-In-Editor world.
 
@@ -189,14 +189,12 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 |------|-------------|
 | `get-logs` | Retrieve UE Output Log entries with filtering (category, severity, search) |
 
-### Write Tools (21)
+### Write Tools (14)
 
 #### Property Tools
 | Tool | Description |
 |------|-------------|
 | `set-property` | Set any property on any asset using UE reflection (supports nested paths, arrays, structs) |
-| `compile-blueprint` | Compile a Blueprint or AnimBlueprint after modifications |
-| `save-asset` | Save a modified asset to disk |
 
 #### Graph Tools
 | Tool | Description |
@@ -210,27 +208,22 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 | Tool | Description |
 |------|-------------|
 | `create-asset` | Create new asset (Blueprint, Material, DataTable, Level, etc.) |
-| `delete-asset` | Delete an asset from the project |
 
 #### Level Editing Tools
 | Tool | Description |
 |------|-------------|
 | `spawn-actor` | Spawn an actor in editor or PIE world. Supports `world` param: 'editor' (default) or 'pie'. |
-| `delete-actor` | Delete an actor from editor or PIE world. Supports `world` param. |
 | `add-component` | Add a component to an existing actor |
-| `remove-component` | Remove a component from an actor |
 
 #### Widget Tools
 | Tool | Description |
 |------|-------------|
 | `add-widget` | Add a widget to a WidgetBlueprint tree |
-| `remove-widget` | Remove a widget from a WidgetBlueprint |
 
 #### DataTable Tools
 | Tool | Description |
 |------|-------------|
 | `add-datatable-row` | Add a row to a DataTable |
-| `remove-datatable-row` | Remove a row from a DataTable |
 
 #### Scripting Tools
 | Tool | Description |
@@ -245,7 +238,7 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 
 ### PIE (Play-In-Editor) Tools - v1.16.0
 
-Tools for controlling PIE sessions and simulating player input. Use `spawn-actor`, `delete-actor`, `query-level` with `world: "pie"` for actor operations.
+Tools for controlling PIE sessions and simulating player input. Use `spawn-actor`, `query-level` with `world: "pie"` for actor operations.
 
 | Tool | Description |
 |------|-------------|
@@ -349,8 +342,13 @@ Get structured diffs for binary Unreal assets against Git or Perforce base versi
 
 ### Asset Modification Workflow
 1. Use `set-property` to modify values
-2. Use `compile-blueprint` if modifying a Blueprint
-3. Use `save-asset` to persist changes
+2. Use `run-python-script` to compile and save:
+   ```python
+   import unreal
+   bp = unreal.load_asset('/Game/MyBP')
+   unreal.KismetEditorUtilities.compile_blueprint(bp)
+   unreal.EditorAssetLibrary.save_asset('/Game/MyBP')
+   ```
 
 ### Transaction Support
 All write operations are wrapped in `FScopedTransaction` for undo/redo support.
