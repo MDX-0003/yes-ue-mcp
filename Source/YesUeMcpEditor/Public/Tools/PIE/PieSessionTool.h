@@ -39,5 +39,5 @@ private:
 	UWorld* GetPIEWorld() const;
 	bool WaitForPIEReady(float TimeoutSeconds) const;
 	TSharedPtr<FJsonObject> GetWorldInfo(UWorld* PIEWorld) const;
-	TSharedPtr<FJsonArray> GetPlayersInfo(UWorld* PIEWorld) const;
+	TArray<TSharedPtr<FJsonValue>> GetPlayersInfo(UWorld* PIEWorld) const;
 };

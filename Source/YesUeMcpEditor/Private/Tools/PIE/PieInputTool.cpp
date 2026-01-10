@@ -12,6 +12,8 @@
 #include "NavigationSystem.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "InputCoreTypes.h"
+#include "EngineUtils.h"
+#include "GameFramework/PlayerInput.h"
 
 FString UPieInputTool::GetToolDescription() const
 {
@@ -89,7 +91,9 @@ FMcpToolResult UPieInputTool::Execute(
 	const TSharedPtr<FJsonObject>& Arguments,
 	const FMcpToolContext& Context)
 {
-	FString Action = GetStringArg(Arguments, TEXT("action")).ToLower();
+	FString Action;
+	GetStringArg(Arguments, TEXT("action"), Action);
+	Action = Action.ToLower();
 
 	if (!GEditor->IsPlaySessionInProgress())
 	{
@@ -168,17 +172,25 @@ FMcpToolResult UPieInputTool::ExecuteKey(const TSharedPtr<FJsonObject>& Argument
 		}
 	}
 
-	// Simulate key input
+	// Simulate key input via PlayerInput
+	UPlayerInput* PlayerInput = PC->PlayerInput;
+	if (!PlayerInput)
+	{
+		return FMcpToolResult::Error(TEXT("Player input not available"));
+	}
+
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
 	if (!bReleaseOnly)
 	{
-		PC->InputKey(FInputKeyParams(Key, IE_Pressed, 0.0, false));
+		PlayerInput->InputKey(FInputKeyParams(Key, IE_Pressed, 1.0, false));
 	}
 
 	if (!bPressOnly)
 	{
 		// Small delay then release
-		PC->InputKey(FInputKeyParams(Key, IE_Released, 0.0, false));
+		PlayerInput->InputKey(FInputKeyParams(Key, IE_Released, 0.0, false));
 	}
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 	Result->SetBoolField(TEXT("success"), true);
@@ -244,32 +256,9 @@ FMcpToolResult UPieInputTool::ExecuteAction(const TSharedPtr<FJsonObject>& Argum
 
 FMcpToolResult UPieInputTool::ExecuteAxis(const TSharedPtr<FJsonObject>& Arguments, UWorld* PIEWorld)
 {
-	int32 PlayerIndex = GetIntArgOrDefault(Arguments, TEXT("player_index"), 0);
-	FString AxisName = GetStringArgOrDefault(Arguments, TEXT("axis_name"));
-	float Value = GetFloatArgOrDefault(Arguments, TEXT("value"), 0.0f);
-
-	if (AxisName.IsEmpty())
-	{
-		return FMcpToolResult::Error(TEXT("axis_name is required for axis action"));
-	}
-
-	APlayerController* PC = GetPlayerController(PIEWorld, PlayerIndex);
-	if (!PC)
-	{
-		return FMcpToolResult::Error(FString::Printf(TEXT("Player controller %d not found"), PlayerIndex));
-	}
-
-	// Inject axis input
-	PC->InputAxis(FKey(*AxisName), Value, 0.016f, 1, false);
-
-	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-	Result->SetBoolField(TEXT("success"), true);
-	Result->SetStringField(TEXT("axis_name"), AxisName);
-	Result->SetNumberField(TEXT("value"), Value);
-
-	UE_LOG(LogYesUeMcp, Log, TEXT("pie-input: Axis %s = %.2f"), *AxisName, Value);
-
-	return FMcpToolResult::Json(Result);
+	// Axis input simulation is not directly supported in UE 5.6+
+	// The InputAxis method was removed from APlayerController
+	return FMcpToolResult::Error(TEXT("Axis input simulation is not supported in UE 5.6+. Use 'key' action with axis keys (e.g., Gamepad_LeftX) or 'move-to' for character movement."));
 }
 
 FMcpToolResult UPieInputTool::ExecuteMoveTo(const TSharedPtr<FJsonObject>& Arguments, UWorld* PIEWorld)

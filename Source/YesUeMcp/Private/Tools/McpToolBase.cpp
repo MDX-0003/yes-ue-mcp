@@ -75,3 +75,28 @@ int32 UMcpToolBase::GetIntArgOrDefault(const TSharedPtr<FJsonObject>& Args, cons
 	}
 	return Default;
 }
+
+bool UMcpToolBase::GetFloatArg(const TSharedPtr<FJsonObject>& Args, const FString& Key, float& OutValue)
+{
+	if (!Args.IsValid())
+	{
+		return false;
+	}
+	double Value;
+	if (Args->TryGetNumberField(Key, Value))
+	{
+		OutValue = static_cast<float>(Value);
+		return true;
+	}
+	return false;
+}
+
+float UMcpToolBase::GetFloatArgOrDefault(const TSharedPtr<FJsonObject>& Args, const FString& Key, float Default)
+{
+	float Value;
+	if (GetFloatArg(Args, Key, Value))
+	{
+		return Value;
+	}
+	return Default;
+}

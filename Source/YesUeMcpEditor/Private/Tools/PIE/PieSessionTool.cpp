@@ -13,6 +13,7 @@
 #include "GameFramework/WorldSettings.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/Guid.h"
+#include "EngineUtils.h"
 
 FString UPieSessionTool::GetToolDescription() const
 {
@@ -97,7 +98,9 @@ FMcpToolResult UPieSessionTool::Execute(
 	const TSharedPtr<FJsonObject>& Arguments,
 	const FMcpToolContext& Context)
 {
-	FString Action = GetStringArg(Arguments, TEXT("action")).ToLower();
+	FString Action;
+	GetStringArg(Arguments, TEXT("action"), Action);
+	Action = Action.ToLower();
 
 	if (Action == TEXT("start"))
 	{
@@ -431,9 +434,9 @@ TSharedPtr<FJsonObject> UPieSessionTool::GetWorldInfo(UWorld* PIEWorld) const
 	return WorldInfo;
 }
 
-TSharedPtr<FJsonArray> UPieSessionTool::GetPlayersInfo(UWorld* PIEWorld) const
+TArray<TSharedPtr<FJsonValue>> UPieSessionTool::GetPlayersInfo(UWorld* PIEWorld) const
 {
-	TSharedPtr<FJsonArray> PlayersArray = MakeShareable(new FJsonArray);
+	TArray<TSharedPtr<FJsonValue>> PlayersArray;
 
 	int32 PlayerIndex = 0;
 	for (FConstPlayerControllerIterator It = PIEWorld->GetPlayerControllerIterator(); It; ++It)
@@ -460,7 +463,7 @@ TSharedPtr<FJsonArray> UPieSessionTool::GetPlayersInfo(UWorld* PIEWorld) const
 			PlayerInfo->SetNumberField(TEXT("speed"), Pawn->GetVelocity().Size());
 		}
 
-		PlayersArray->Add(MakeShareable(new FJsonValueObject(PlayerInfo)));
+		PlayersArray.Add(MakeShareable(new FJsonValueObject(PlayerInfo)));
 		PlayerIndex++;
 	}
 

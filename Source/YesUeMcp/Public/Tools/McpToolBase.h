@@ -86,6 +86,12 @@ protected:
 
 	/** Helper to get optional int argument with default */
 	static int32 GetIntArgOrDefault(const TSharedPtr<FJsonObject>& Args, const FString& Key, int32 Default = 0);
+
+	/** Helper to get float argument */
+	static bool GetFloatArg(const TSharedPtr<FJsonObject>& Args, const FString& Key, float& OutValue);
+
+	/** Helper to get optional float argument with default */
+	static float GetFloatArgOrDefault(const TSharedPtr<FJsonObject>& Args, const FString& Key, float Default = 0.0f);
 };
 
 /**
