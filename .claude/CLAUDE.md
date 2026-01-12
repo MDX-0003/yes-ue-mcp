@@ -149,7 +149,7 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 #### Blueprint Tools
 | Tool | Description |
 |------|-------------|
-| `query-blueprint` | Query Blueprint structure: functions, variables, components, defaults. Use `include` param to select what to return. (Merged: analyze-blueprint, get-blueprint-functions, get-blueprint-variables, get-blueprint-components, get-blueprint-defaults) |
+| `query-blueprint` | Query Blueprint structure: functions, variables, components, defaults, component overrides. Use `include` param to select what to return ('functions', 'variables', 'components', 'defaults', 'graph', 'component_overrides', 'all'). Use `component_overrides` to see which component properties have been modified from their defaults. |
 | `query-blueprint-graph` | Query Blueprint graphs: event graphs, functions, macros, nodes. Use `node_guid` for specific node, `callable_name` for callable details, `list_callables` for lightweight list. (Merged: get-blueprint-graph, get-blueprint-node, list-blueprint-callables, get-callable-details) |
 
 #### Asset Tools
@@ -194,7 +194,7 @@ Use `copy_plugin.ps1` to safely copy the plugin to test projects:
 #### Property Tools
 | Tool | Description |
 |------|-------------|
-| `set-property` | Set any property on any asset using UE reflection (supports nested paths, arrays, structs) |
+| `set-property` | Set any property on any asset using UE reflection (supports nested paths, arrays, structs). For Blueprint components, use `component_name` param to target a specific component. Use `clear_override` to revert to default value. |
 
 #### Graph Tools
 | Tool | Description |
@@ -340,8 +340,68 @@ Get structured diffs for binary Unreal assets against Git or Perforce base versi
 { "asset_path": "/Game/BP_Actor", "property_path": "Location", "value": [100, 200, 0] }
 ```
 
+### Component Property Overrides - v1.19.0
+
+Query and modify properties on component instances within Blueprints.
+
+**Query component overrides:**
+```json
+{
+  "tool": "query-blueprint",
+  "asset_path": "/Game/Blueprints/BP_Character",
+  "include": "component_overrides",
+  "component_filter": "*Mesh*"
+}
+
+// Response shows which properties differ from defaults
+{
+  "component_overrides": {
+    "components": [
+      {
+        "name": "CharacterMesh",
+        "class": "SkeletalMeshComponent",
+        "is_inherited": false,
+        "overrides": [
+          {
+            "name": "RelativeScale3D",
+            "type": "FVector",
+            "value": "(X=1.5,Y=1.5,Z=1.5)",
+            "default_value": "(X=1.0,Y=1.0,Z=1.0)",
+            "is_overridden": true
+          }
+        ],
+        "override_count": 1
+      }
+    ],
+    "count": 1
+  }
+}
+```
+
+**Set component property:**
+```json
+{
+  "tool": "set-property",
+  "asset_path": "/Game/Blueprints/BP_Character",
+  "component_name": "CharacterMesh",
+  "property_path": "RelativeScale3D",
+  "value": [2.0, 2.0, 2.0]
+}
+```
+
+**Clear override (revert to default):**
+```json
+{
+  "tool": "set-property",
+  "asset_path": "/Game/Blueprints/BP_Character",
+  "component_name": "CharacterMesh",
+  "property_path": "RelativeScale3D",
+  "clear_override": true
+}
+```
+
 ### Asset Modification Workflow
-1. Use `set-property` to modify values
+1. Use `set-property` to modify values (optionally with `component_name` for components)
 2. Use `run-python-script` to compile and save:
    ```python
    import unreal

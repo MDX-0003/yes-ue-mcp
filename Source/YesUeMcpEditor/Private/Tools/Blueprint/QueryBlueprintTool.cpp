@@ -6,17 +6,20 @@
 #include "Engine/BlueprintGeneratedClass.h"
 #include "Engine/SimpleConstructionScript.h"
 #include "Engine/SCS_Node.h"
+#include "Engine/InheritableComponentHandler.h"
 #include "EdGraph/EdGraph.h"
 #include "K2Node.h"
 #include "K2Node_Event.h"
 #include "K2Node_FunctionEntry.h"
 #include "K2Node_CustomEvent.h"
 #include "Kismet2/BlueprintEditorUtils.h"
+#include "Components/ActorComponent.h"
+#include "GameFramework/Actor.h"
 
 FString UQueryBlueprintTool::GetToolDescription() const
 {
-	return TEXT("Query Blueprint structure: functions, variables, components, defaults, and event graph summary. "
-		"Use 'include' parameter to select sections: 'functions', 'variables', 'components', 'defaults', 'graph', 'all'.");
+	return TEXT("Query Blueprint structure: functions, variables, components, defaults, event graph, and component overrides. "
+		"Use 'include' parameter to select sections: 'functions', 'variables', 'components', 'defaults', 'graph', 'component_overrides', 'all'.");
 }
 
 TMap<FString, FMcpSchemaProperty> UQueryBlueprintTool::GetInputSchema() const
@@ -31,7 +34,7 @@ TMap<FString, FMcpSchemaProperty> UQueryBlueprintTool::GetInputSchema() const
 
 	FMcpSchemaProperty Include;
 	Include.Type = TEXT("string");
-	Include.Description = TEXT("Sections to include: 'functions', 'variables', 'components', 'defaults', 'graph', or 'all' (default: 'all')");
+	Include.Description = TEXT("Sections to include: 'functions', 'variables', 'components', 'defaults', 'graph', 'component_overrides', or 'all' (default: 'all')");
 	Include.bRequired = false;
 	Schema.Add(TEXT("include"), Include);
 
@@ -60,6 +63,19 @@ TMap<FString, FMcpSchemaProperty> UQueryBlueprintTool::GetInputSchema() const
 	IncludeInherited.bRequired = false;
 	Schema.Add(TEXT("include_inherited"), IncludeInherited);
 
+	// Component overrides specific options
+	FMcpSchemaProperty ComponentFilter;
+	ComponentFilter.Type = TEXT("string");
+	ComponentFilter.Description = TEXT("Filter components by name (wildcards supported, e.g., '*Mesh*'). For component_overrides section.");
+	ComponentFilter.bRequired = false;
+	Schema.Add(TEXT("component_filter"), ComponentFilter);
+
+	FMcpSchemaProperty IncludeNonOverridden;
+	IncludeNonOverridden.Type = TEXT("boolean");
+	IncludeNonOverridden.Description = TEXT("Include all properties, not just overridden ones (default: false). For component_overrides section.");
+	IncludeNonOverridden.bRequired = false;
+	Schema.Add(TEXT("include_non_overridden"), IncludeNonOverridden);
+
 	return Schema;
 }
 
@@ -85,6 +101,10 @@ FMcpToolResult UQueryBlueprintTool::Execute(
 	FString PropertyFilter = GetStringArgOrDefault(Arguments, TEXT("property_filter"), TEXT(""));
 	FString CategoryFilter = GetStringArgOrDefault(Arguments, TEXT("category_filter"), TEXT(""));
 	bool bIncludeInherited = GetBoolArgOrDefault(Arguments, TEXT("include_inherited"), false);
+
+	// Component overrides specific options
+	FString ComponentFilter = GetStringArgOrDefault(Arguments, TEXT("component_filter"), TEXT(""));
+	bool bIncludeNonOverridden = GetBoolArgOrDefault(Arguments, TEXT("include_non_overridden"), false);
 
 	UE_LOG(LogYesUeMcp, Log, TEXT("query-blueprint: path='%s', include='%s', detailed=%s"),
 		*AssetPath, *Include, bDetailed ? TEXT("true") : TEXT("false"));
@@ -153,6 +173,12 @@ FMcpToolResult UQueryBlueprintTool::Execute(
 	if (bAll || Include == TEXT("defaults"))
 	{
 		Result->SetObjectField(TEXT("defaults"), ExtractDefaults(Blueprint, bIncludeInherited, CategoryFilter, PropertyFilter));
+	}
+
+	if (Include == TEXT("component_overrides"))
+	{
+		// Note: component_overrides is NOT included in 'all' to avoid noise - must be explicitly requested
+		Result->SetObjectField(TEXT("component_overrides"), ExtractComponentOverrides(Blueprint, ComponentFilter, PropertyFilter, bIncludeNonOverridden));
 	}
 
 	return FMcpToolResult::Json(Result);
@@ -534,4 +560,251 @@ FString UQueryBlueprintTool::GetPropertyTypeString(FProperty* Property) const
 	}
 
 	return Property->GetClass()->GetName();
+}
+
+TSharedPtr<FJsonObject> UQueryBlueprintTool::ExtractComponentOverrides(UBlueprint* Blueprint, const FString& ComponentFilter, const FString& PropertyFilter, bool bIncludeNonOverridden) const
+{
+	TSharedPtr<FJsonObject> ResultObj = MakeShareable(new FJsonObject);
+	TArray<TSharedPtr<FJsonValue>> ComponentsArray;
+
+	// Helper lambda to check if property name matches filter
+	auto MatchesPropertyFilter = [&PropertyFilter](const FString& PropName) -> bool
+	{
+		if (PropertyFilter.IsEmpty())
+		{
+			return true;
+		}
+		FString FilterPattern = PropertyFilter.Replace(TEXT("*"), TEXT(""));
+		return PropName.Contains(FilterPattern);
+	};
+
+	// Helper lambda to check if component name matches filter
+	auto MatchesComponentFilter = [&ComponentFilter](const FString& CompName) -> bool
+	{
+		if (ComponentFilter.IsEmpty())
+		{
+			return true;
+		}
+		FString FilterPattern = ComponentFilter.Replace(TEXT("*"), TEXT(""));
+		return CompName.Contains(FilterPattern);
+	};
+
+	// Helper lambda to extract overridden properties from a component template
+	auto ExtractOverriddenProperties = [this, &MatchesPropertyFilter, bIncludeNonOverridden](
+		UActorComponent* ComponentTemplate,
+		UActorComponent* DefaultComponent) -> TArray<TSharedPtr<FJsonValue>>
+	{
+		TArray<TSharedPtr<FJsonValue>> PropertiesArray;
+
+		if (!ComponentTemplate)
+		{
+			return PropertiesArray;
+		}
+
+		UClass* ComponentClass = ComponentTemplate->GetClass();
+
+		for (TFieldIterator<FProperty> PropIt(ComponentClass); PropIt; ++PropIt)
+		{
+			FProperty* Property = *PropIt;
+			if (!Property)
+			{
+				continue;
+			}
+
+			// Skip non-editable properties
+			if (!(Property->PropertyFlags & CPF_Edit))
+			{
+				continue;
+			}
+
+			FString PropName = Property->GetName();
+			if (!MatchesPropertyFilter(PropName))
+			{
+				continue;
+			}
+
+			void* TemplateValuePtr = Property->ContainerPtrToValuePtr<void>(ComponentTemplate);
+			if (!TemplateValuePtr)
+			{
+				continue;
+			}
+
+			// Check if property is overridden (different from default)
+			bool bIsOverridden = false;
+			FString DefaultValueStr;
+
+			if (DefaultComponent)
+			{
+				void* DefaultValuePtr = Property->ContainerPtrToValuePtr<void>(DefaultComponent);
+				if (DefaultValuePtr)
+				{
+					bIsOverridden = !Property->Identical(TemplateValuePtr, DefaultValuePtr);
+					Property->ExportText_Direct(DefaultValueStr, DefaultValuePtr, DefaultValuePtr, DefaultComponent, PPF_None);
+				}
+			}
+
+			// Skip non-overridden properties unless explicitly requested
+			if (!bIsOverridden && !bIncludeNonOverridden)
+			{
+				continue;
+			}
+
+			TSharedPtr<FJsonObject> PropObj = MakeShareable(new FJsonObject);
+			PropObj->SetStringField(TEXT("name"), PropName);
+			PropObj->SetStringField(TEXT("type"), GetPropertyTypeString(Property));
+
+			// Current value
+			FString CurrentValueStr;
+			Property->ExportText_Direct(CurrentValueStr, TemplateValuePtr, TemplateValuePtr, ComponentTemplate, PPF_None);
+			PropObj->SetStringField(TEXT("value"), CurrentValueStr);
+
+			// Default value (if available)
+			if (!DefaultValueStr.IsEmpty())
+			{
+				PropObj->SetStringField(TEXT("default_value"), DefaultValueStr);
+			}
+
+			PropObj->SetBoolField(TEXT("is_overridden"), bIsOverridden);
+
+			// Category
+			FString Category = Property->GetMetaData(TEXT("Category"));
+			if (!Category.IsEmpty())
+			{
+				PropObj->SetStringField(TEXT("category"), Category);
+			}
+
+			PropertiesArray.Add(MakeShareable(new FJsonValueObject(PropObj)));
+		}
+
+		return PropertiesArray;
+	};
+
+	// 1. Process SCS components (components added in this Blueprint)
+	if (Blueprint->SimpleConstructionScript)
+	{
+		TArray<USCS_Node*> AllNodes = Blueprint->SimpleConstructionScript->GetAllNodes();
+
+		for (USCS_Node* Node : AllNodes)
+		{
+			if (!Node || !Node->ComponentTemplate)
+			{
+				continue;
+			}
+
+			FString ComponentName = Node->GetVariableName().ToString();
+			if (!MatchesComponentFilter(ComponentName))
+			{
+				continue;
+			}
+
+			UActorComponent* Template = Node->ComponentTemplate;
+			UClass* ComponentClass = Template->GetClass();
+
+			// Get class default object for comparison
+			UActorComponent* ComponentCDO = ComponentClass->GetDefaultObject<UActorComponent>();
+
+			TArray<TSharedPtr<FJsonValue>> OverriddenProperties = ExtractOverriddenProperties(Template, ComponentCDO);
+
+			// Only add if there are overrides or we're including all
+			if (OverriddenProperties.Num() > 0 || bIncludeNonOverridden)
+			{
+				TSharedPtr<FJsonObject> CompObj = MakeShareable(new FJsonObject);
+				CompObj->SetStringField(TEXT("name"), ComponentName);
+				CompObj->SetStringField(TEXT("class"), ComponentClass->GetName());
+				CompObj->SetBoolField(TEXT("is_inherited"), false);
+				CompObj->SetArrayField(TEXT("overrides"), OverriddenProperties);
+				CompObj->SetNumberField(TEXT("override_count"), OverriddenProperties.Num());
+
+				ComponentsArray.Add(MakeShareable(new FJsonValueObject(CompObj)));
+			}
+		}
+	}
+
+	// 2. Process inherited component overrides via InheritableComponentHandler
+	UInheritableComponentHandler* ICH = Blueprint->GetInheritableComponentHandler(false);
+	if (ICH)
+	{
+		TArray<FComponentKey> OverrideKeys;
+		ICH->GetAllTemplates(OverrideKeys);
+
+		for (const FComponentKey& Key : OverrideKeys)
+		{
+			UActorComponent* OverrideTemplate = ICH->GetOverridenComponentTemplate(Key);
+			if (!OverrideTemplate)
+			{
+				continue;
+			}
+
+			FString ComponentName = Key.GetSCSVariableName().ToString();
+			if (ComponentName.IsEmpty())
+			{
+				// Try to get name from the component itself
+				ComponentName = OverrideTemplate->GetName();
+			}
+
+			if (!MatchesComponentFilter(ComponentName))
+			{
+				continue;
+			}
+
+			// Find the parent component for comparison
+			UActorComponent* ParentComponent = nullptr;
+			FString ParentBlueprintPath;
+
+			// Get parent class to find the original component
+			UClass* ParentClass = Blueprint->ParentClass;
+			if (ParentClass)
+			{
+				if (AActor* ParentCDO = Cast<AActor>(ParentClass->GetDefaultObject()))
+				{
+					// Find component by name in parent
+					TArray<UActorComponent*> ParentComponents;
+					ParentCDO->GetComponents(ParentComponents);
+					for (UActorComponent* Comp : ParentComponents)
+					{
+						if (Comp && Comp->GetName() == OverrideTemplate->GetName())
+						{
+							ParentComponent = Comp;
+							break;
+						}
+					}
+				}
+
+				// Get parent Blueprint path if it's a Blueprint class
+				if (UBlueprintGeneratedClass* ParentBPClass = Cast<UBlueprintGeneratedClass>(ParentClass))
+				{
+					if (UBlueprint* ParentBP = Cast<UBlueprint>(ParentBPClass->ClassGeneratedBy))
+					{
+						ParentBlueprintPath = ParentBP->GetPathName();
+					}
+				}
+			}
+
+			TArray<TSharedPtr<FJsonValue>> OverriddenProperties = ExtractOverriddenProperties(OverrideTemplate, ParentComponent);
+
+			// Only add if there are overrides or we're including all
+			if (OverriddenProperties.Num() > 0 || bIncludeNonOverridden)
+			{
+				TSharedPtr<FJsonObject> CompObj = MakeShareable(new FJsonObject);
+				CompObj->SetStringField(TEXT("name"), ComponentName);
+				CompObj->SetStringField(TEXT("class"), OverrideTemplate->GetClass()->GetName());
+				CompObj->SetBoolField(TEXT("is_inherited"), true);
+
+				if (!ParentBlueprintPath.IsEmpty())
+				{
+					CompObj->SetStringField(TEXT("parent_blueprint"), ParentBlueprintPath);
+				}
+
+				CompObj->SetArrayField(TEXT("overrides"), OverriddenProperties);
+				CompObj->SetNumberField(TEXT("override_count"), OverriddenProperties.Num());
+
+				ComponentsArray.Add(MakeShareable(new FJsonValueObject(CompObj)));
+			}
+		}
+	}
+
+	ResultObj->SetArrayField(TEXT("components"), ComponentsArray);
+	ResultObj->SetNumberField(TEXT("count"), ComponentsArray.Num());
+
+	return ResultObj;
 }

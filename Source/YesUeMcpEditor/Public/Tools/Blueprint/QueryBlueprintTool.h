@@ -44,6 +44,9 @@ private:
 	/** Extract CDO defaults */
 	TSharedPtr<FJsonObject> ExtractDefaults(class UBlueprint* Blueprint, bool bIncludeInherited, const FString& CategoryFilter, const FString& PropertyFilter) const;
 
+	/** Extract component instance overrides */
+	TSharedPtr<FJsonObject> ExtractComponentOverrides(class UBlueprint* Blueprint, const FString& ComponentFilter, const FString& PropertyFilter, bool bIncludeNonOverridden) const;
+
 	// === Helpers ===
 
 	/** Convert property to JSON */
