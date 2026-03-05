@@ -188,45 +188,15 @@ FMcpToolResult UPieSessionTool::ExecuteStart(const TSharedPtr<FJsonObject>& Argu
 
 	GEditor->RequestPlaySession(Params);
 
-	if (!WaitForPIEReady(Timeout))
-	{
-		return FMcpToolResult::Error(FString::Printf(TEXT("PIE did not start within %.0f seconds"), Timeout));
-	}
-
-	UWorld* PIEWorld = GetPIEWorld();
-	if (!PIEWorld)
-	{
-		return FMcpToolResult::Error(TEXT("PIE started but could not find PIE world"));
-	}
-
-	// Get player info
-	TArray<double> PlayerStartLocation = {0, 0, 0};
-	TArray<AActor*> PlayerStarts;
-	UGameplayStatics::GetAllActorsOfClass(PIEWorld, APlayerStart::StaticClass(), PlayerStarts);
-	if (PlayerStarts.Num() > 0)
-	{
-		FVector Loc = PlayerStarts[0]->GetActorLocation();
-		PlayerStartLocation = {Loc.X, Loc.Y, Loc.Z};
-	}
-
-	APlayerController* PC = PIEWorld->GetFirstPlayerController();
-	FString PlayerPawnName = PC && PC->GetPawn() ? PC->GetPawn()->GetName() : TEXT("None");
-
+	// Fire-and-forget：立即返回，不阻塞 GameThread 等待 PIE 就绪。
+	// 客户端应通过 get-state action 轮询 PIE 状态直到 state 变为 "running"。
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 	Result->SetBoolField(TEXT("success"), true);
 	Result->SetStringField(TEXT("session_id"), GenerateSessionId());
-	Result->SetStringField(TEXT("world_name"), PIEWorld->GetName());
-	Result->SetStringField(TEXT("state"), TEXT("running"));
-	Result->SetStringField(TEXT("player_pawn"), PlayerPawnName);
+	Result->SetStringField(TEXT("state"), TEXT("starting"));
+	Result->SetStringField(TEXT("message"), TEXT("PIE start requested. Use get-state action to poll until state becomes 'running'."));
 
-	TArray<TSharedPtr<FJsonValue>> StartLocArray;
-	for (double Val : PlayerStartLocation)
-	{
-		StartLocArray.Add(MakeShareable(new FJsonValueNumber(Val)));
-	}
-	Result->SetArrayField(TEXT("player_start"), StartLocArray);
-
-	UE_LOG(LogYesUeMcp, Log, TEXT("pie-session: Started (world=%s)"), *PIEWorld->GetName());
+	UE_LOG(LogYesUeMcp, Log, TEXT("pie-session: Start requested (mode=%s)"), *Mode);
 	return FMcpToolResult::Json(Result);
 }
 
@@ -242,22 +212,14 @@ FMcpToolResult UPieSessionTool::ExecuteStop(const TSharedPtr<FJsonObject>& Argum
 
 	GEditor->RequestEndPlayMap();
 
-	const double WaitStart = FPlatformTime::Seconds();
-	while (GEditor->IsPlaySessionInProgress() && (FPlatformTime::Seconds() - WaitStart) < 5.0)
-	{
-		FPlatformProcess::Sleep(0.05f);
-	}
-
-	if (GEditor->IsPlaySessionInProgress())
-	{
-		return FMcpToolResult::Error(TEXT("Failed to stop PIE within timeout"));
-	}
-
+	// Fire-and-forget：立即返回，不阻塞 GameThread 等待 PIE 完全停止。
+	// 客户端应通过 get-state action 轮询 PIE 状态直到 state 变为 "not_running"。
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 	Result->SetBoolField(TEXT("success"), true);
-	Result->SetStringField(TEXT("state"), TEXT("stopped"));
+	Result->SetStringField(TEXT("state"), TEXT("stopping"));
+	Result->SetStringField(TEXT("message"), TEXT("PIE stop requested. Use get-state action to poll until state becomes 'not_running'."));
 
-	UE_LOG(LogYesUeMcp, Log, TEXT("pie-session: Stopped"));
+	UE_LOG(LogYesUeMcp, Log, TEXT("pie-session: Stop requested"));
 	return FMcpToolResult::Json(Result);
 }
 
