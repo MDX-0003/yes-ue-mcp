@@ -188,8 +188,8 @@ FMcpToolResult UPieSessionTool::ExecuteStart(const TSharedPtr<FJsonObject>& Argu
 
 	GEditor->RequestPlaySession(Params);
 
-	// Fire-and-forget：立即返回，不阻塞 GameThread 等待 PIE 就绪。
-	// 客户端应通过 get-state action 轮询 PIE 状态直到 state 变为 "running"。
+	// Fire-and-forget: return immediately without blocking GameThread waiting for PIE ready.
+	// Client should poll PIE state via get-state action until state becomes "running".
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 	Result->SetBoolField(TEXT("success"), true);
 	Result->SetStringField(TEXT("session_id"), GenerateSessionId());
@@ -212,8 +212,8 @@ FMcpToolResult UPieSessionTool::ExecuteStop(const TSharedPtr<FJsonObject>& Argum
 
 	GEditor->RequestEndPlayMap();
 
-	// Fire-and-forget：立即返回，不阻塞 GameThread 等待 PIE 完全停止。
-	// 客户端应通过 get-state action 轮询 PIE 状态直到 state 变为 "not_running"。
+	// Fire-and-forget: return immediately without blocking GameThread waiting for PIE to fully stop.
+	// Client should poll PIE state via get-state action until state becomes "not_running".
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 	Result->SetBoolField(TEXT("success"), true);
 	Result->SetStringField(TEXT("state"), TEXT("stopping"));

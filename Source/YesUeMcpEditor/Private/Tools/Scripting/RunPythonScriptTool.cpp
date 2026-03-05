@@ -123,7 +123,7 @@ FMcpToolResult URunPythonScriptTool::Execute(
 	                          Output.Contains(TEXT("load_level")) ||
 	                          Output.Contains(TEXT("Loading map"));
 
-	// 方案A修复：仅在检测到 level 加载操作时才执行 GC，避免异常路径下的 use-after-free
+	// Fix: only run GC when level loading is detected, to avoid use-after-free on error paths
 	if (bLevelLoadDetected)
 	{
 		CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
@@ -170,8 +170,8 @@ FString URunPythonScriptTool::ExecutePython(const FString& Command, bool& bOutSu
 	FDateTime StartTime = FDateTime::Now();
 
 	// Wrap script with error handling
-	// 方案B修复：先给第一行也加上缩进（"    " + Script），再将所有换行后也加缩进
-	// 这样 try: 块内的每一行都有正确的4空格缩进
+	// Fix: prepend indent to the first line as well, then indent all subsequent lines
+	// so every line inside the try: block has correct 4-space indentation
 	FString IndentedCommand = TEXT("    ") + Command.Replace(TEXT("\n"), TEXT("\n    "));
 	FString WrappedScript = FString::Printf(TEXT(
 		"_mcp_success = True\n"
@@ -188,10 +188,10 @@ FString URunPythonScriptTool::ExecutePython(const FString& Command, bool& bOutSu
 	// Execute the script
 	PythonPlugin->ExecPythonCommand(*WrappedScript);
 
-	// 方案A修复：仅在脚本执行完毕后且检测到可能涉及 level 加载的操作时才执行 GC
-	// 原本每次都无条件调用 CollectGarbage 会在 Python 执行异常后触发 use-after-free 崩溃
-	// (GetTypeHash(FUtf8String) → Strihash_DEPRECATED → CodepointFromUtf8 → Access Violation)
-	// 延迟到下方检测到 level 加载时再执行 GC
+	// Deferred to Execute() - only run GC when level loading is detected
+	// Originally calling CollectGarbage unconditionally caused use-after-free crash on Python errors
+	// (GetTypeHash(FUtf8String) -> Strihash_DEPRECATED -> CodepointFromUtf8 -> Access Violation)
+	// Deferred to Execute() - only run GC when level loading is detected
 
 	// Capture output from LogPython category
 	TArray<FMcpLogEntry> Logs = FMcpLogCapture::Get().GetLogs(
