@@ -147,16 +147,17 @@ FMcpToolResult USetPropertyTool::Execute(
 			// Try InheritableComponentHandler (inherited component overrides)
 			if (!bFoundComponent)
 			{
-				UInheritableComponentHandler* ICH = Blueprint->GetInheritableComponentHandler(true);
+			UInheritableComponentHandler* ICH = Blueprint->GetInheritableComponentHandler(true);
 				if (ICH)
 				{
-					TArray<FComponentKey> OverrideKeys;
-					ICH->GetAllTemplates(OverrideKeys);
+					TArray<UActorComponent*> OverrideTemplates;
+					ICH->GetAllTemplates(OverrideTemplates);
 
-					for (const FComponentKey& Key : OverrideKeys)
+					for (UActorComponent* ExistingTemplate : OverrideTemplates)
 					{
+						if (!ExistingTemplate) continue;
+						FComponentKey Key = ICH->FindKey(ExistingTemplate);
 						FString KeyName = Key.GetSCSVariableName().ToString();
-						UActorComponent* ExistingTemplate = ICH->GetOverridenComponentTemplate(Key);
 
 						if (KeyName == ComponentName || (ExistingTemplate && ExistingTemplate->GetName() == ComponentName))
 						{

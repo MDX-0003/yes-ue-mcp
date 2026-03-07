@@ -724,17 +724,17 @@ TSharedPtr<FJsonObject> UQueryBlueprintTool::ExtractComponentOverrides(UBlueprin
 	UInheritableComponentHandler* ICH = Blueprint->GetInheritableComponentHandler(false);
 	if (ICH)
 	{
-		TArray<FComponentKey> OverrideKeys;
-		ICH->GetAllTemplates(OverrideKeys);
+		TArray<UActorComponent*> OverrideTemplates;
+		ICH->GetAllTemplates(OverrideTemplates);
 
-		for (const FComponentKey& Key : OverrideKeys)
+		for (UActorComponent* OverrideTemplate : OverrideTemplates)
 		{
-			UActorComponent* OverrideTemplate = ICH->GetOverridenComponentTemplate(Key);
 			if (!OverrideTemplate)
 			{
 				continue;
 			}
 
+			FComponentKey Key = ICH->FindKey(OverrideTemplate);
 			FString ComponentName = Key.GetSCSVariableName().ToString();
 			if (ComponentName.IsEmpty())
 			{
