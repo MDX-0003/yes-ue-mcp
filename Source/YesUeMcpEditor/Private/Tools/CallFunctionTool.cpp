@@ -1,6 +1,7 @@
 // Copyright softdaddy-o 2024. All Rights Reserved.
 
 #include "Tools/CallFunctionTool.h"
+#include "Tools/PIE/PieSessionTool.h"
 #include "YesUeMcpEditor.h"
 #include "Editor.h"
 #include "Engine/World.h"
@@ -71,6 +72,12 @@ FMcpToolResult UCallFunctionTool::Execute(
 	}
 
 	// Actor or component function
+	// PIE 过渡期保护：避免在 PIE 正在启动/停止时访问不稳定的世界对象
+	if (WorldParam.Equals(TEXT("pie"), ESearchCase::IgnoreCase) && UPieSessionTool::IsPIETransitioning())
+	{
+		return FMcpToolResult::Error(TEXT("PIE is currently transitioning (starting or stopping). Please wait and try again."));
+	}
+
 	UWorld* World = GetTargetWorld(WorldParam);
 	if (!World)
 	{
@@ -182,8 +189,17 @@ FMcpToolResult UCallFunctionTool::CallFunctionOnObject(UObject* Object, const FS
 		return FMcpToolResult::Error(FString::Printf(TEXT("Function not found: %s"), *FunctionName));
 	}
 
-	// Allocate and init parameters
-	uint8* ParamBuffer = (uint8*)FMemory_Alloca(Function->ParmsSize);
+	// 参数大小安全检查：防止超大参数导致内存问题（上限 64KB）
+	constexpr int32 MaxParmsSize = 64 * 1024;
+	if (Function->ParmsSize > MaxParmsSize)
+	{
+		return FMcpToolResult::Error(FString::Printf(
+			TEXT("Function '%s' parameter size (%d bytes) exceeds safety limit (%d bytes)"),
+			*FunctionName, Function->ParmsSize, MaxParmsSize));
+	}
+
+	// 使用堆分配代替 FMemory_Alloca，避免栈溢出风险
+	uint8* ParamBuffer = (uint8*)FMemory::Malloc(Function->ParmsSize);
 	FMemory::Memzero(ParamBuffer, Function->ParmsSize);
 
 	for (TFieldIterator<FProperty> It(Function); It && (It->PropertyFlags & CPF_Parm); ++It)
@@ -243,6 +259,7 @@ FMcpToolResult UCallFunctionTool::CallFunctionOnObject(UObject* Object, const FS
 	{
 		It->DestroyValue_InContainer(ParamBuffer);
 	}
+	FMemory::Free(ParamBuffer);
 
 	UE_LOG(LogYesUeMcp, Log, TEXT("call-function: Called %s on %s"), *FunctionName, *Object->GetName());
 	return FMcpToolResult::Json(Result);

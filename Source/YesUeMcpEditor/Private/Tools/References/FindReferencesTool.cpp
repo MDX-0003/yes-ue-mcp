@@ -209,6 +209,17 @@ FMcpToolResult UFindReferencesTool::FindPropertyReferences(const FString& AssetP
 	// Get Blueprints to search
 	TArray<FAssetData> BlueprintsToSearch = GetBlueprintsInPath(AssetPath);
 
+	// 蓝图全量加载数量上限，防止 GameThread 长时间阻塞
+	constexpr int32 MaxBlueprintsToLoad = 200;
+	bool bBlueprintsTruncated = false;
+	if (BlueprintsToSearch.Num() > MaxBlueprintsToLoad)
+	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("find-references: Path '%s' contains %d blueprints, truncating to %d to avoid long blocking"),
+			*AssetPath, BlueprintsToSearch.Num(), MaxBlueprintsToLoad);
+		bBlueprintsTruncated = true;
+		BlueprintsToSearch.SetNum(MaxBlueprintsToLoad);
+	}
+
 	// Build result
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
 	Result->SetStringField(TEXT("type"), TEXT("property"));
@@ -453,6 +464,17 @@ FMcpToolResult UFindReferencesTool::FindNodeReferences(const FString& AssetPath,
 		BlueprintsToSearch = GetBlueprintsInPath(AssetPath);
 	}
 
+	// 蓝图全量加载数量上限，防止 GameThread 长时间阻塞
+	constexpr int32 MaxBlueprintsToLoad = 200;
+	bool bBlueprintsTruncated = false;
+	if (BlueprintsToSearch.Num() > MaxBlueprintsToLoad)
+	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("find-references: Path '%s' contains %d blueprints, truncating to %d to avoid long blocking"),
+			*AssetPath, BlueprintsToSearch.Num(), MaxBlueprintsToLoad);
+		bBlueprintsTruncated = true;
+		BlueprintsToSearch.SetNum(MaxBlueprintsToLoad);
+	}
+
 	for (const FAssetData& AssetData : BlueprintsToSearch)
 	{
 		if (UsagesArray.Num() >= Limit)
@@ -558,15 +580,32 @@ FMcpToolResult UFindReferencesTool::FindNodeReferences(const FString& AssetPath,
 	Result->SetNumberField(TEXT("count"), UsagesArray.Num());
 	Result->SetNumberField(TEXT("blueprints_searched"), BlueprintsSearched);
 	Result->SetBoolField(TEXT("truncated"), UsagesArray.Num() >= Limit);
+	if (bBlueprintsTruncated)
+	{
+		Result->SetBoolField(TEXT("blueprints_truncated"), true);
+		Result->SetNumberField(TEXT("max_blueprints_to_load"), MaxBlueprintsToLoad);
+		Result->SetStringField(TEXT("warning"), FString::Printf(TEXT("Search path contains too many blueprints. Only the first %d were loaded. Use a more specific asset_path to narrow results."), MaxBlueprintsToLoad));
+	}
 
 	return FMcpToolResult::Json(Result);
 }
 
 FMcpToolResult UFindReferencesTool::FindNodeReferencesLegacy(const FString& AssetPath, const FString& NodeClass,
-													   const FString& FunctionName, int32 Limit)
+														   const FString& FunctionName, int32 Limit)
 {
 	// Get Blueprints to search
 	TArray<FAssetData> BlueprintsToSearch = GetBlueprintsInPath(AssetPath);
+
+	// 蓝图全量加载数量上限，防止 GameThread 长时间阻塞
+	constexpr int32 MaxBlueprintsToLoadLegacy = 200;
+	bool bBlueprintsTruncatedLegacy = false;
+	if (BlueprintsToSearch.Num() > MaxBlueprintsToLoadLegacy)
+	{
+		UE_LOG(LogYesUeMcp, Warning, TEXT("find-references: Path '%s' contains %d blueprints, truncating to %d to avoid long blocking"),
+			*AssetPath, BlueprintsToSearch.Num(), MaxBlueprintsToLoadLegacy);
+		bBlueprintsTruncatedLegacy = true;
+		BlueprintsToSearch.SetNum(MaxBlueprintsToLoadLegacy);
+	}
 
 	// Build result
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
@@ -693,6 +732,12 @@ FMcpToolResult UFindReferencesTool::FindNodeReferencesLegacy(const FString& Asse
 	Result->SetNumberField(TEXT("count"), UsagesArray.Num());
 	Result->SetNumberField(TEXT("blueprints_searched"), BlueprintsSearched);
 	Result->SetBoolField(TEXT("truncated"), UsagesArray.Num() >= Limit);
+	if (bBlueprintsTruncatedLegacy)
+	{
+		Result->SetBoolField(TEXT("blueprints_truncated"), true);
+		Result->SetNumberField(TEXT("max_blueprints_to_load"), MaxBlueprintsToLoadLegacy);
+		Result->SetStringField(TEXT("warning"), FString::Printf(TEXT("Search path contains too many blueprints. Only the first %d were loaded. Use a more specific asset_path to narrow results."), MaxBlueprintsToLoadLegacy));
+	}
 
 	return FMcpToolResult::Json(Result);
 }

@@ -1,6 +1,7 @@
 // Copyright softdaddy-o 2024. All Rights Reserved.
 
 #include "Tools/PIE/PieInputTool.h"
+#include "Tools/PIE/PieSessionTool.h"
 #include "YesUeMcpEditor.h"
 #include "Editor.h"
 #include "Engine/World.h"
@@ -94,6 +95,12 @@ FMcpToolResult UPieInputTool::Execute(
 	FString Action;
 	GetStringArg(Arguments, TEXT("action"), Action);
 	Action = Action.ToLower();
+
+	// 检查 PIE 是否正在过渡（启动/停止中），避免访问正在创建/销毁的世界对象
+	if (UPieSessionTool::IsPIETransitioning())
+	{
+		return FMcpToolResult::Error(TEXT("PIE is currently transitioning (starting/stopping). Please wait and try again."));
+	}
 
 	if (!GEditor->IsPlaySessionInProgress())
 	{

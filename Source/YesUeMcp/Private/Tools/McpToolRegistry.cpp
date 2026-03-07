@@ -135,12 +135,33 @@ int32 FMcpToolRegistry::GetToolCount() const
 	return ToolClasses.Num();
 }
 
+bool FMcpToolRegistry::DoesToolRequireGameThread(const FString& ToolName) const
+{
+	FScopeLock ScopeLock(&Lock);
+
+	UClass* const* ToolClassPtr = ToolClasses.Find(ToolName);
+	if (!ToolClassPtr || !*ToolClassPtr)
+	{
+		// 未知工具默认需要 GameThread（安全起见）
+		return true;
+	}
+
+	UMcpToolBase* CDO = (*ToolClassPtr)->GetDefaultObject<UMcpToolBase>();
+	if (!CDO)
+	{
+		return true;
+	}
+
+	return CDO->RequiresGameThread();
+}
+
 FMcpToolResult FMcpToolRegistry::ExecuteTool(
 	const FString& ToolName,
 	const TSharedPtr<FJsonObject>& Arguments,
 	const FMcpToolContext& Context)
 {
-	UE_LOG(LogYesUeMcp, Log, TEXT("Executing tool: %s"), *ToolName);
+	UE_LOG(LogYesUeMcp, Log, TEXT("Executing tool: %s (Thread: %s)"),
+		*ToolName, IsInGameThread() ? TEXT("GameThread") : TEXT("Background"));
 
 	UMcpToolBase* Tool = FindTool(ToolName);
 	if (!Tool)

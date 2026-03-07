@@ -1,6 +1,7 @@
 // Copyright softdaddy-o 2024. All Rights Reserved.
 
 #include "Tools/Level/QueryLevelTool.h"
+#include "Tools/PIE/PieSessionTool.h"
 #include "Editor.h"
 #include "Engine/World.h"
 #include "Engine/Level.h"
@@ -133,6 +134,11 @@ FMcpToolResult UQueryLevelTool::Execute(
 
 	if (WorldParam == TEXT("pie"))
 	{
+		// PIE 过渡期保护：避免在 PIE 启动/停止过程中访问正在创建/销毁的世界对象
+		if (UPieSessionTool::IsPIETransitioning())
+		{
+			return FMcpToolResult::Error(TEXT("PIE is currently transitioning (starting or stopping). Please wait and try again."));
+		}
 		// PIE only - fail if not running
 		for (const FWorldContext& WorldContext : GEngine->GetWorldContexts())
 		{
@@ -149,6 +155,18 @@ FMcpToolResult UQueryLevelTool::Execute(
 	}
 	else if (WorldParam == TEXT("auto"))
 	{
+		// PIE 过渡期保护
+		if (UPieSessionTool::IsPIETransitioning())
+		{
+			// auto 模式下 PIE 过渡中则回退到 editor world
+			World = GEditor->GetEditorWorldContext().World();
+			if (!World)
+			{
+				return FMcpToolResult::Error(TEXT("PIE is transitioning and no editor world available."));
+			}
+		}
+		else
+		{
 		// Auto mode: prefer PIE if available, else editor
 		for (const FWorldContext& WorldContext : GEngine->GetWorldContexts())
 		{
@@ -166,6 +184,7 @@ FMcpToolResult UQueryLevelTool::Execute(
 		{
 			return FMcpToolResult::Error(TEXT("No world loaded"));
 		}
+		} // end else (!IsPIETransitioning)
 	}
 	else
 	{
@@ -1061,6 +1080,21 @@ FMcpToolResult UQueryLevelTool::QueryExternalLevel(const FString& LevelPath, con
 
 	UE_LOG(LogYesUeMcp, Log, TEXT("query-level: External level query complete - %d actors returned"),
 		ActorsArray.Num());
+
+	// 卸载临时加载的外部关卡，避免内存泄漏
+	if (LoadedWorld && !LoadedWorld->HasAnyFlags(RF_Standalone))
+	{
+		UE_LOG(LogYesUeMcp, Log, TEXT("query-level: Unloading temporary external level '%s'"), *LevelPath);
+		// 清除对 Actor 的引用后，重置包的脏标记并卸载
+		UPackage* LevelPackage = LoadedWorld->GetOutermost();
+		if (LevelPackage)
+		{
+			LevelPackage->ClearDirtyFlag();
+			// 标记为可回收，让 GC 在下次运行时清理
+			LoadedWorld->ClearFlags(RF_Standalone);
+			LoadedWorld->MarkAsGarbage();
+		}
+	}
 
 	return FMcpToolResult::Json(Result);
 }

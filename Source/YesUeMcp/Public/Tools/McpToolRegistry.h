@@ -51,6 +51,9 @@ public:
 	/** Check if tool exists */
 	bool HasTool(const FString& ToolName) const;
 
+	/** 检查工具是否需要在 GameThread 上执行 */
+	bool DoesToolRequireGameThread(const FString& ToolName) const;
+
 	/** Get number of registered tools */
 	int32 GetToolCount() const;
 

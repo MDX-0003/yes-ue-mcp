@@ -34,10 +34,10 @@ public:
 
 private:
 #if PLATFORM_WINDOWS
-	// Execute synchronous compilation (blocks until complete)
-	FMcpToolResult ExecuteSynchronous(ILiveCodingModule* LiveCodingModule);
+	// 查询编译状态（非阻塞）
+	FMcpToolResult QueryCompilationStatus(ILiveCodingModule* LiveCodingModule);
 
-	// Execute asynchronous compilation (fire and forget)
+	// 触发异步编译（fire-and-forget）
 	FMcpToolResult ExecuteAsynchronous(ILiveCodingModule* LiveCodingModule);
 #endif
 };

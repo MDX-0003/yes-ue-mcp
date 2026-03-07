@@ -241,7 +241,6 @@ bool FMcpServer::HandleMcpRequest(const FHttpServerRequest& Request, const FHttp
 		return true;
 	}
 
-	// Process on game thread for UE API access
 	FMcpRequest McpRequest = ParsedRequest.GetValue();
 
 	// Track pending requests
@@ -252,7 +251,22 @@ bool FMcpServer::HandleMcpRequest(const FHttpServerRequest& Request, const FHttp
 		UE_LOG(LogYesUeMcp, Warning, TEXT("MCP Server overloaded: %d pending requests"), CurrentPending);
 	}
 
-	AsyncTask(ENamedThreads::GameThread, [this, McpRequest, OnComplete]()
+	// 判断是否需要在 GameThread 上执行：
+	// - 工具调用：检查工具的 RequiresGameThread() 标志
+	// - 协议请求（Initialize/ToolsList/Shutdown 等）：始终在 GameThread 上执行
+	bool bNeedsGameThread = true;
+	if (McpRequest.ParsedMethod == EMcpMethod::ToolsCall && McpRequest.Params.IsValid())
+	{
+		FString ToolName;
+		if (McpRequest.Params->TryGetStringField(TEXT("name"), ToolName))
+		{
+			bNeedsGameThread = FMcpToolRegistry::Get().DoesToolRequireGameThread(ToolName);
+			UE_LOG(LogYesUeMcpEditor, Log, TEXT("  Tool '%s' RequiresGameThread=%d"), *ToolName, bNeedsGameThread);
+		}
+	}
+
+	// 通用的请求处理 Lambda（在 GameThread 或后台线程中执行）
+	auto ProcessAndRespond = [this, McpRequest, OnComplete]()
 	{
 		FMcpResponse Response;
 
@@ -296,7 +310,18 @@ bool FMcpServer::HandleMcpRequest(const FHttpServerRequest& Request, const FHttp
 		}
 
 		SendResponse(OnComplete, Response);
-	});
+	};
+
+	if (bNeedsGameThread)
+	{
+		// 需要 GameThread 的请求（大多数工具 + 协议请求）
+		AsyncTask(ENamedThreads::GameThread, MoveTemp(ProcessAndRespond));
+	}
+	else
+	{
+		// 不需要 GameThread 的工具，在后台线程池执行，减轻 GameThread 压力
+		AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask, MoveTemp(ProcessAndRespond));
+	}
 
 	return true;
 }

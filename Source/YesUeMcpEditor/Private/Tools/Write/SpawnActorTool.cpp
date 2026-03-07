@@ -1,6 +1,7 @@
 // Copyright softdaddy-o 2024. All Rights Reserved.
 
 #include "Tools/Write/SpawnActorTool.h"
+#include "Tools/PIE/PieSessionTool.h"
 #include "Utils/McpAssetModifier.h"
 #include "YesUeMcpEditor.h"
 #include "Editor.h"
@@ -107,6 +108,12 @@ FMcpToolResult USpawnActorTool::Execute(
 	UWorld* World = nullptr;
 	if (bUsePIE)
 	{
+		// 检查 PIE 是否正处于过渡状态（启动/停止中），避免访问不稳定的世界对象
+		if (UPieSessionTool::IsPIETransitioning())
+		{
+			return FMcpToolResult::Error(TEXT("PIE is currently transitioning (starting or stopping). Please wait and try again."));
+		}
+
 		// Find PIE world
 		for (const FWorldContext& WorldContext : GEngine->GetWorldContexts())
 		{

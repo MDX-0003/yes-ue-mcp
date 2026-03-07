@@ -295,7 +295,22 @@ bool UGetAssetDiffTool::ExtractGitBaseVersion(const FString& FilePath, const FSt
 
 	if (ProcHandle.IsValid())
 	{
-		FPlatformProcess::WaitForProc(ProcHandle);
+		// 带超时的非阻塞等待，避免在 GameThread 上无限阻塞
+		const double TimeoutSeconds = 30.0;
+		const double StartTime = FPlatformTime::Seconds();
+		while (FPlatformProcess::IsProcRunning(ProcHandle))
+		{
+			if (FPlatformTime::Seconds() - StartTime > TimeoutSeconds)
+			{
+				FPlatformProcess::TerminateProc(ProcHandle, true);
+				FPlatformProcess::CloseProc(ProcHandle);
+				FPlatformProcess::ClosePipe(PipeRead, PipeWrite);
+				OutError = FString::Printf(TEXT("Git process timed out after %.0f seconds"), TimeoutSeconds);
+				return false;
+			}
+			// 短暂让出 CPU，避免忙等占用 GameThread
+			FPlatformProcess::Sleep(0.01f);
+		}
 		FPlatformProcess::GetProcReturnCode(ProcHandle, &ReturnCode);
 		StdErr = FPlatformProcess::ReadPipe(PipeRead);
 		FPlatformProcess::CloseProc(ProcHandle);
@@ -366,7 +381,43 @@ bool UGetAssetDiffTool::ExtractPerforceBaseVersion(const FString& FilePath, cons
 	FString P4Exe = TEXT("p4.exe");
 	FString P4Args = FString::Printf(TEXT("print -o \"%s\" \"%s\""), *OutTempPath, *FileSpec);
 
-	FPlatformProcess::ExecProcess(*P4Exe, *P4Args, &ReturnCode, &StdOut, &StdErr);
+	{
+		void* PipeRead = nullptr;
+		void* PipeWrite = nullptr;
+		FPlatformProcess::CreatePipe(PipeRead, PipeWrite);
+
+		FProcHandle ProcHandle = FPlatformProcess::CreateProc(
+			*P4Exe, *P4Args, false, true, true, nullptr, 0, nullptr, PipeWrite);
+
+		if (ProcHandle.IsValid())
+		{
+			// 带超时的非阻塞等待，避免在 GameThread 上无限阻塞
+			const double TimeoutSeconds = 60.0;
+			const double StartTime = FPlatformTime::Seconds();
+			while (FPlatformProcess::IsProcRunning(ProcHandle))
+			{
+				if (FPlatformTime::Seconds() - StartTime > TimeoutSeconds)
+				{
+					FPlatformProcess::TerminateProc(ProcHandle, true);
+					FPlatformProcess::CloseProc(ProcHandle);
+					FPlatformProcess::ClosePipe(PipeRead, PipeWrite);
+					OutError = FString::Printf(TEXT("Perforce process timed out after %.0f seconds"), TimeoutSeconds);
+					return false;
+				}
+				FPlatformProcess::Sleep(0.01f);
+			}
+			FPlatformProcess::GetProcReturnCode(ProcHandle, &ReturnCode);
+			StdErr = FPlatformProcess::ReadPipe(PipeRead);
+			FPlatformProcess::CloseProc(ProcHandle);
+		}
+		else
+		{
+			ReturnCode = -1;
+			StdErr = TEXT("Failed to create Perforce process");
+		}
+
+		FPlatformProcess::ClosePipe(PipeRead, PipeWrite);
+	}
 #else
 	FString P4Command = FString::Printf(TEXT("p4 print -o \"%s\" \"%s\""), *OutTempPath, *FileSpec);
 	FPlatformProcess::ExecProcess(TEXT("/bin/sh"), *FString::Printf(TEXT("-c \"%s\""), *P4Command), &ReturnCode, &StdOut, &StdErr);
