@@ -98,7 +98,8 @@ void FYesUeMcpEditorModule::RegisterBuiltInTools()
 
 	// Analysis tools
 	Registry.RegisterToolClass(UClassHierarchyTool::StaticClass());
-
+	Registry.RegisterToolClass(UAnalyzeUeTraceTool::StaticClass());
+	
 	// Reference tools
 	Registry.RegisterToolClass(UFindReferencesTool::StaticClass());
 

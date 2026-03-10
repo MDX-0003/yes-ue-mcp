@@ -7,6 +7,7 @@
 #include "IHttpRouter.h"
 #include "Protocol/McpTypes.h"
 #include "Protocol/McpCapabilities.h"
+#include "HAL/CriticalSection.h"
 
 /** Server health status */
 enum class EMcpServerStatus : uint8
@@ -70,7 +71,8 @@ private:
 	bool bInitialized = false;
 
 	/** Session management */
-	FString CurrentSessionId;
+	mutable FCriticalSection SessionIdLock;
+	FString CurrentSessionId;      // guarded by SessionIdLock
 	FMcpClientCapabilities ClientCapabilities;
 	FMcpClientInfo ClientInfo;
 
@@ -109,4 +111,21 @@ private:
 
 	/** Send error HTTP response */
 	void SendErrorResponse(const FHttpResultCallback& OnComplete, int32 HttpStatus, int32 JsonRpcCode, const FString& Message);
+
+	/** Thread-safe session ID access */
+	FString GetCurrentSessionId() const
+	{
+		FScopeLock Lock(&SessionIdLock);
+		return CurrentSessionId;
+	}
+	void SetCurrentSessionId(const FString& NewId)
+	{
+		FScopeLock Lock(&SessionIdLock);
+		CurrentSessionId = NewId;
+	}
+	void ClearCurrentSessionId()
+	{
+		FScopeLock Lock(&SessionIdLock);
+		CurrentSessionId.Empty();
+	}
 };

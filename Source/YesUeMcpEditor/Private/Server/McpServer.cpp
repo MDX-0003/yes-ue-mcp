@@ -86,11 +86,9 @@ void FMcpServer::Stop()
 		HttpRouter->UnbindRoute(McpRouteHandle);
 	}
 
-	// Note: Don't stop all listeners as other modules might be using HTTP
-
 	bIsRunning = false;
 	bInitialized = false;
-	CurrentSessionId.Empty();
+	ClearCurrentSessionId();
 	ServerStatus = EMcpServerStatus::Stopped;
 
 	UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP Server stopped"));
@@ -156,7 +154,7 @@ bool FMcpServer::HandleMcpRequest(const FHttpServerRequest& Request, const FHttp
 	// Handle DELETE (session termination)
 	if (Request.Verb == EHttpServerRequestVerbs::VERB_DELETE)
 	{
-		CurrentSessionId.Empty();
+		ClearCurrentSessionId();
 		bInitialized = false;
 
 		TUniquePtr<FHttpServerResponse> Response = FHttpServerResponse::Create(TEXT(""), TEXT("text/plain"));
@@ -177,13 +175,52 @@ bool FMcpServer::HandleMcpRequest(const FHttpServerRequest& Request, const FHttp
 
 		if (bExpectsSSE)
 		{
-			// SSE not supported - return 405 per MCP spec
-			UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP GET request - SSE not supported, returning 405"));
+			// Read the session id the client sent in its request header.
+			// We echo it back so the client sees a matching Mcp-Session-Id
+			// regardless of whether our GameThread has finished writing
+			// CurrentSessionId yet (avoids the race between initialize POST
+			// and the immediately-following GET SSE).
+			FString EchoSessionId;
+			const TArray<FString>* SessionHeader = Request.Headers.Find(TEXT("mcp-session-id"));
+			if (SessionHeader && SessionHeader->Num() > 0)
+			{
+				EchoSessionId = (*SessionHeader)[0];
+				// Also sync our server-side state so future requests agree.
+				if (!EchoSessionId.IsEmpty())
+				{
+					SetCurrentSessionId(EchoSessionId);
+				}
+			}
+			else
+			{
+				// No session header yet — fall back to whatever we already have.
+				EchoSessionId = GetCurrentSessionId();
+			}
 
-			TUniquePtr<FHttpServerResponse> Response = FHttpServerResponse::Create(TEXT(""), TEXT("text/plain"));
-			Response->Headers.Add(TEXT("Access-Control-Allow-Origin"), {TEXT("*")});
-			Response->Code = EHttpServerResponseCodes::BadMethod;
-			OnComplete(MoveTemp(Response));
+			UE_LOG(LogYesUeMcpEditor, Log,
+				TEXT("MCP GET SSE request - returning minimal SSE response (session: %s)"),
+				*EchoSessionId);
+
+			// SSE body: a single keep-alive comment followed by stream end.
+			// UE's HTTP server does not support persistent chunked streaming, so we
+			// close immediately. The client treats this as a valid idle SSE channel
+			// and drives all further communication via POST.
+			const FString SseBody = TEXT(": keep-alive\n\n");
+			TArray<uint8> SseBytes;
+			FTCHARToUTF8 Convert(*SseBody);
+			SseBytes.Append(reinterpret_cast<const uint8*>(Convert.Get()), Convert.Length());
+
+			TUniquePtr<FHttpServerResponse> SseResponse =
+				FHttpServerResponse::Create(MoveTemp(SseBytes), TEXT("text/event-stream"));
+			SseResponse->Headers.Add(TEXT("Access-Control-Allow-Origin"), {TEXT("*")});
+			SseResponse->Headers.Add(TEXT("Cache-Control"),               {TEXT("no-cache")});
+			SseResponse->Headers.Add(TEXT("Connection"),                  {TEXT("keep-alive")});
+			if (!EchoSessionId.IsEmpty())
+			{
+				SseResponse->Headers.Add(TEXT("Mcp-Session-Id"), {EchoSessionId});
+			}
+			SseResponse->Code = EHttpServerResponseCodes::Ok;
+			OnComplete(MoveTemp(SseResponse));
 			return true;
 		}
 
@@ -210,7 +247,7 @@ bool FMcpServer::HandleMcpRequest(const FHttpServerRequest& Request, const FHttp
 	}
 
 	// Handle POST (JSON-RPC requests)
-	if (Request.Verb != EHttpServerRequestVerbs::VERB_POST)
+if (Request.Verb != EHttpServerRequestVerbs::VERB_POST)
 	{
 		SendErrorResponse(OnComplete, 405, EMcpErrorCode::InvalidRequest, TEXT("Method not allowed"));
 		return true;
@@ -287,8 +324,8 @@ bool FMcpServer::HandleMcpRequest(const FHttpServerRequest& Request, const FHttp
 		catch (...)
 		{
 			FString ErrorMsg = TEXT("Unknown exception during request processing");
-			SetError(ErrorMsg);
-			Response = FMcpResponse::Error(McpRequest.Id, EMcpErrorCode::InternalError, ErrorMsg);
+		 SetError(ErrorMsg);
+		 Response = FMcpResponse::Error(McpRequest.Id, EMcpErrorCode::InternalError, ErrorMsg);
 		}
 #endif
 
@@ -346,7 +383,7 @@ FMcpResponse FMcpServer::ProcessRequest(const FMcpRequest& Request)
 
 	case EMcpMethod::Shutdown:
 		bInitialized = false;
-		CurrentSessionId.Empty();
+		ClearCurrentSessionId();
 		return FMcpResponse::Success(Request.Id, MakeShareable(new FJsonObject));
 
 	default:
@@ -357,9 +394,18 @@ FMcpResponse FMcpServer::ProcessRequest(const FMcpRequest& Request)
 
 FMcpResponse FMcpServer::HandleInitialize(const FMcpRequest& Request)
 {
+	// Supported protocol versions in preference order (newest first)
+	static const TArray<FString> SupportedVersions = {
+		TEXT("2025-03-26"),
+		TEXT("2024-11-05"),
+	};
+
 	// Parse client info
+	FString ClientProtocolVersion;
 	if (Request.Params.IsValid())
 	{
+		Request.Params->TryGetStringField(TEXT("protocolVersion"), ClientProtocolVersion);
+
 		const TSharedPtr<FJsonObject>* ClientInfoObj;
 		if (Request.Params->TryGetObjectField(TEXT("clientInfo"), ClientInfoObj))
 		{
@@ -373,15 +419,29 @@ FMcpResponse FMcpServer::HandleInitialize(const FMcpRequest& Request)
 		}
 	}
 
-	// Generate session ID
-	CurrentSessionId = GenerateSessionId();
+	// Negotiate protocol version: prefer what the client asked for if we support it,
+	// otherwise fall back to our highest supported version.
+	FString NegotiatedVersion;
+	if (!ClientProtocolVersion.IsEmpty() && SupportedVersions.Contains(ClientProtocolVersion))
+	{
+		NegotiatedVersion = ClientProtocolVersion;
+	}
+	else
+	{
+		NegotiatedVersion = SupportedVersions[0]; // our highest supported
+	}
 
-	UE_LOG(LogYesUeMcpEditor, Log, TEXT("MCP Initialize from client: %s %s"),
-		*ClientInfo.Name, *ClientInfo.Version);
+	// Generate session ID
+	const FString NewSessionId = GenerateSessionId();
+	SetCurrentSessionId(NewSessionId);
+
+	UE_LOG(LogYesUeMcpEditor, Log,
+		TEXT("MCP Initialize: client=%s %s protocolVersion(requested='%s' negotiated='%s')"),
+		*ClientInfo.Name, *ClientInfo.Version, *ClientProtocolVersion, *NegotiatedVersion);
 
 	// Build response
 	TSharedPtr<FJsonObject> Result = MakeShareable(new FJsonObject);
-	Result->SetStringField(TEXT("protocolVersion"), MCP_PROTOCOL_VERSION);
+	Result->SetStringField(TEXT("protocolVersion"), NegotiatedVersion);
 	Result->SetObjectField(TEXT("capabilities"), Capabilities.ToJson());
 	Result->SetObjectField(TEXT("serverInfo"), ServerInfo.ToJson());
 
@@ -454,10 +514,11 @@ void FMcpServer::SendResponse(const FHttpResultCallback& OnComplete, const FMcpR
 	TUniquePtr<FHttpServerResponse> HttpResponse = FHttpServerResponse::Create(JsonString, TEXT("application/json"));
 	HttpResponse->Headers.Add(TEXT("Access-Control-Allow-Origin"), {TEXT("*")});
 
-	if (!CurrentSessionId.IsEmpty())
+	const FString SessionId = GetCurrentSessionId();
+	if (!SessionId.IsEmpty())
 	{
-		HttpResponse->Headers.Add(TEXT("Mcp-Session-Id"), {CurrentSessionId});
-		UE_LOG(LogYesUeMcpEditor, Log, TEXT("  Session-Id: %s"), *CurrentSessionId);
+		HttpResponse->Headers.Add(TEXT("Mcp-Session-Id"), {SessionId});
+		UE_LOG(LogYesUeMcpEditor, Log, TEXT("  Session-Id: %s"), *SessionId);
 	}
 
 	HttpResponse->Code = static_cast<EHttpServerResponseCodes>(StatusCode);

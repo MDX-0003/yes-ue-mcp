@@ -142,7 +142,19 @@ TSharedPtr<FJsonObject> FMcpResponse::ToJson() const
 {
 	TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
 	JsonObject->SetStringField(TEXT("jsonrpc"), JsonRpc);
-	JsonObject->SetStringField(TEXT("id"), Id);
+	if (!Id.IsEmpty())
+    {
+        // FString::IsNumeric returns true for integers and floats (and negatives).
+        if (Id.IsNumeric())
+        {
+            double NumericId = FCString::Atod(*Id);
+            JsonObject->SetNumberField(TEXT("id"), NumericId);
+        }
+        else
+        {
+            JsonObject->SetStringField(TEXT("id"), Id);
+        }
+    }
 
 	if (Result.IsValid())
 	{
@@ -193,7 +205,9 @@ TSharedPtr<FJsonObject> FMcpSchemaProperty::ToJson() const
 		JsonObject->SetField(TEXT("default"), Default);
 	}
 
-	// Add items schema for array types
+	// Add items schema for array types. Only emit 'items' when ItemsType is explicitly
+	// set; omitting 'items' is valid per JSON Schema (allows any item type) and avoids
+	// strict MCP validators rejecting an empty items object {}.
 	if (Type == TEXT("array") && !ItemsType.IsEmpty())
 	{
 		TSharedPtr<FJsonObject> ItemsObj = MakeShareable(new FJsonObject);

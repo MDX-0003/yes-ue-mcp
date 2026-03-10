@@ -83,7 +83,9 @@ public class YesUeMcpEditor : ModuleRules
 			"LiveCoding",
 
 			// Source Control (for SCM diff tool)
-			"SourceControl"
+			"SourceControl",
+			//Trace
+			"TraceServices"
 		});
 	}
 }

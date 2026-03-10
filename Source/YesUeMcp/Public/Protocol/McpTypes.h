@@ -6,8 +6,11 @@
 #include "Dom/JsonObject.h"
 #include "McpTypes.generated.h"
 
-/** MCP Protocol version */
-#define MCP_PROTOCOL_VERSION TEXT("2025-06-18")
+/** MCP Protocol version (latest) */
+#define MCP_PROTOCOL_VERSION TEXT("2025-03-26")
+
+/** MCP Protocol version - legacy fallback (most widely supported) */
+#define MCP_PROTOCOL_VERSION_LEGACY TEXT("2024-11-05")
 
 /** JSON-RPC version */
 #define JSONRPC_VERSION TEXT("2.0")

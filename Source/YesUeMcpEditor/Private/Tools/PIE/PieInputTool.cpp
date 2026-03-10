@@ -69,6 +69,7 @@ TMap<FString, FMcpSchemaProperty> UPieInputTool::GetInputSchema() const
 
 	FMcpSchemaProperty Target;
 	Target.Type = TEXT("array");
+	Target.ItemsType = TEXT("number");
 	Target.Description = TEXT("[move-to/look-at] Target location as [X, Y, Z]");
 	Target.bRequired = false;
 	Schema.Add(TEXT("target"), Target);

@@ -31,6 +31,7 @@ TMap<FString, FMcpSchemaProperty> URunPythonScriptTool::GetInputSchema() const
 
 	FMcpSchemaProperty PythonPaths;
 	PythonPaths.Type = TEXT("array");
+	PythonPaths.ItemsType = TEXT("string");
 	PythonPaths.Description = TEXT("Additional directories to add to Python sys.path for module imports (array of strings)");
 	PythonPaths.bRequired = false;
 	Schema.Add(TEXT("python_paths"), PythonPaths);

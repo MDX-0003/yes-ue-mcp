@@ -89,6 +89,7 @@ TMap<FString, FMcpSchemaProperty> UPieSessionTool::GetInputSchema() const
 
 	FMcpSchemaProperty Include;
 	Include.Type = TEXT("array");
+	Include.ItemsType = TEXT("string");
 	Include.Description = TEXT("[get-state] What to include: 'world', 'players'. Default: all.");
 	Include.bRequired = false;
 	Schema.Add(TEXT("include"), Include);
