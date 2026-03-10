@@ -24,6 +24,10 @@ FString UAnalyzeUeTraceTool::GetToolDescription() const
 		"If trace_file is omitted, the most recent .utrace in Saved/Profiling/UnrealInsights/ is used.");
 }
 
+//用自定类型FMcpSchemaProperty控制当前Tool需要哪些参数，Execute里要从Json端解析同一批参数
+//调用链：Server端 ProcessRequest  ->HandleInitialize-> HandleToolsList
+// 注册端 Registry.GetAllToolDefinitions 
+// UMcpToolBase父类::GetDefinition -> Tool子类::GetInputSchema（）
 TMap<FString, FMcpSchemaProperty> UAnalyzeUeTraceTool::GetInputSchema() const
 {
 	TMap<FString, FMcpSchemaProperty> Schema;
@@ -83,11 +87,14 @@ TArray<FString> UAnalyzeUeTraceTool::GetRequiredParams() const
 {
 	return {};
 }
-
+//整个Tool的核心函数
+//调用链：Server端 ProcessRequest ->HandleInitialize -> HandleToolsList ->HandleToolsCall 
+//注册端Registry.ExecuteTool() -> Tool->Execute()最后会依次触发每个Tool子类的Execute重写
 FMcpToolResult UAnalyzeUeTraceTool::Execute(
 	const TSharedPtr<FJsonObject>& Arguments,
 	const FMcpToolContext& Context)
 {
+#pragma region Argument Parsing
 	const FString TraceFilePath = GetStringArgOrDefault(Arguments, TEXT("trace_file"),    TEXT(""));
 	const FString AnalysisType  = GetStringArgOrDefault(Arguments, TEXT("analysis_type"), TEXT("all")).ToLower();
 	const FString FrameRange    = GetStringArgOrDefault(Arguments, TEXT("frame_range"),   TEXT(""));
@@ -98,13 +105,14 @@ FMcpToolResult UAnalyzeUeTraceTool::Execute(
 	const int32   CalleeDepth   = GetIntArgOrDefault   (Arguments, TEXT("callee_depth"),  5);
 
 	// Parse name_filter into keywords array
-	TArray<FString> NameFilters;
+	TArray<FString> NameFilters;//输入的参数可以是 str1,str2,str3多个关键词，拆分到数组NameFilters
 	if (!NameFilterRaw.IsEmpty())
 	{
+		
 		NameFilterRaw.ParseIntoArray(NameFilters, TEXT(","));
-		for (FString& KW : NameFilters)
+		for (FString& keyword : NameFilters)
 		{
-			KW = KW.TrimStartAndEnd().ToLower();
+			keyword = keyword.TrimStartAndEnd().ToLower();
 		}
 		NameFilters.RemoveAll([](const FString& S){ return S.IsEmpty(); });
 	}
@@ -113,6 +121,7 @@ FMcpToolResult UAnalyzeUeTraceTool::Execute(
 		TEXT("analyze-ue-trace: file='%s' type='%s' range='%s' top_n=%d threshold=%.2f filter='%s' timer='%s'"),
 		*TraceFilePath, *AnalysisType, *FrameRange, TopN, ThresholdMs, *NameFilterRaw, *TimerName);
 
+	//参数AnalysisType必须是指定的几个值之一，否则报错
 	static const TArray<FString> ValidTypes = { TEXT("frame_time"), TEXT("cpu"), TEXT("gpu"), TEXT("memory"), TEXT("all") };
 	if (!ValidTypes.Contains(AnalysisType))
 	{
@@ -124,7 +133,11 @@ FMcpToolResult UAnalyzeUeTraceTool::Execute(
 	{
 		return FMcpToolResult::Error(TEXT("Request cancelled."));
 	}
+#pragma endregion
 
+#pragma region A: Find trace file
+
+	//模块函数A : 拿到trace 文件的绝对路径，要么使用参数提供的，要么在默认目录里找最新的
 	const FString ResolvedPath = FindTraceFile(TraceFilePath);
 	if (ResolvedPath.IsEmpty())
 	{
@@ -135,6 +148,9 @@ FMcpToolResult UAnalyzeUeTraceTool::Execute(
 	}
 
 	UE_LOG(LogYesUeMcp, Log, TEXT("analyze-ue-trace: resolved -> %s"), *ResolvedPath);
+#pragma endregion
+
+#pragma region B : Parse trace file
 
 	const FTraceParseResult ParseResult = ParseTraceSession(ResolvedPath, Context, TimerName);
 	if (!ParseResult.bValid)
@@ -146,6 +162,9 @@ FMcpToolResult UAnalyzeUeTraceTool::Execute(
 	{
 		return FMcpToolResult::Error(TEXT("Request cancelled after trace parsing."));
 	}
+#pragma endregion
+
+#pragma region C : Output to Json
 
 	TSharedPtr<FJsonObject> ResultJson = BuildResultJson(ParseResult, AnalysisType, FrameRange, TopN, ThresholdMs, NameFilters);
 
@@ -155,12 +174,12 @@ FMcpToolResult UAnalyzeUeTraceTool::Execute(
 		ResultJson->SetObjectField(TEXT("callee_tree"),
 			ButterflyNodeToJson(ParseResult.CalleeTree.GetValue(), CalleeDepth));
 	}
-
+#pragma endregion
 	return FMcpToolResult::Json(ResultJson);
 }
 
 // --- Module A ---
-
+//对路径下全部.utrace排序，返回最新的一个
 FString UAnalyzeUeTraceTool::FindTraceFile(const FString& HintPath) const
 {
 	if (!HintPath.IsEmpty())
@@ -196,6 +215,8 @@ FTraceParseResult UAnalyzeUeTraceTool::ParseTraceSession(
 	const FMcpToolContext& Context,
 	const FString& TimerNameForCallee) const
 {
+#pragma region get session
+
 	FTraceParseResult Result;
 	Result.TracePath = TracePath;
 
@@ -203,16 +224,14 @@ FTraceParseResult UAnalyzeUeTraceTool::ParseTraceSession(
 	FString TimerNameSearch = TimerNameForCallee;
 	TimerNameSearch.TrimStartAndEndInline();
 
-	ITraceServicesModule*
-		TraceServicesModule = FModuleManager::GetModulePtr<ITraceServicesModule>("TraceServices");
+	ITraceServicesModule* TraceServicesModule = FModuleManager::GetModulePtr<ITraceServicesModule>("TraceServices");
 	if (!TraceServicesModule)
 	{
 		UE_LOG(LogYesUeMcp, Error, TEXT("analyze-ue-trace: TraceServices module not available."));
 		return Result;
 	}
-
-	TSharedPtr<TraceServices::IAnalysisService> AnalysisService =
-		TraceServicesModule->GetAnalysisService();//��CreateAnalysisService��Ϊlazy����
+	//这里不能用Create而是用get实现lazy加载，否则会有模块已存在却重复创建的问题
+	TSharedPtr<TraceServices::IAnalysisService> AnalysisService = TraceServicesModule->GetAnalysisService();
 	if (!AnalysisService.IsValid())
 	{
 		UE_LOG(LogYesUeMcp, Error, TEXT("analyze-ue-trace: Failed to create IAnalysisService."));
@@ -220,8 +239,7 @@ FTraceParseResult UAnalyzeUeTraceTool::ParseTraceSession(
 	}
 
 	// Synchronous: blocks until file is fully processed
-	TSharedPtr<const TraceServices::IAnalysisSession> Session =
-		AnalysisService->Analyze(*TracePath);
+	TSharedPtr<const TraceServices::IAnalysisSession> Session = AnalysisService->Analyze(*TracePath);
 	if (!Session.IsValid())
 	{
 		UE_LOG(LogYesUeMcp, Error,
@@ -230,103 +248,103 @@ FTraceParseResult UAnalyzeUeTraceTool::ParseTraceSession(
 	}
 
 	if (Context.IsCancelled()) { return Result; }
-
+#pragma endregion
+	//从.trace拿到session 创建Scope ,  GetDuration要写在ReadScope创建以后
 	TraceServices::FAnalysisSessionReadScope ReadScope(*Session);
-	//GetDuration�ڲ������Lock.ReadAccessCheck()����Ҫ��ReadScope�ڴ�֮ǰ����
 	Result.DurationSeconds = Session->GetDurationSeconds();
 
-	// B3: frames
+	static const FName FrameProviderName(TEXT("FrameProvider"));
+	const TraceServices::IFrameProvider* FrameProvider = Session->ReadProvider<TraceServices::IFrameProvider>(FrameProviderName);
+	const TraceServices::ITimingProfilerProvider* TimingProvider = TraceServices::ReadTimingProfilerProvider(*Session);
+	const TraceServices::IThreadProvider& ThreadProvider =
+		TraceServices::ReadThreadProvider(*Session);
+
+	//ReadScope->FrameProvider拿到每一帧的index,duration，存到Result.Frames（FTraceFrameRecord）
+#pragma region Get Frames
+
+	
+	if (FrameProvider)
 	{
-		static const FName FrameProviderName(TEXT("FrameProvider"));
-		const TraceServices::IFrameProvider* FrameProvider =
-			Session->ReadProvider<TraceServices::IFrameProvider>(FrameProviderName);
+		const uint64 FrameCount = FrameProvider->GetFrameCount(ETraceFrameType::TraceFrameType_Game);
+		Result.Frames.Reserve((int32)FMath::Min(FrameCount, (uint64)100000));
 
-		if (FrameProvider)
-		{
-			const uint64 FrameCount = FrameProvider->GetFrameCount(ETraceFrameType::TraceFrameType_Game);
-			Result.Frames.Reserve((int32)FMath::Min(FrameCount, (uint64)100000));
+		FrameProvider->EnumerateFrames(
+			ETraceFrameType::TraceFrameType_Game, (uint64)0, FrameCount,
+			[&](const TraceServices::FFrame& Frame)
+			{
+				const double DurMs = (Frame.EndTime - Frame.StartTime) * 1000.0;
+				if (DurMs <= 0.0) { return; } // skip incomplete frame records
+				FTraceFrameRecord Rec;
+				Rec.Index      = (int64)Frame.Index;
+				Rec.DurationMs = DurMs;
+				Result.Frames.Add(Rec);
+			});
 
-			FrameProvider->EnumerateFrames(
-				ETraceFrameType::TraceFrameType_Game, (uint64)0, FrameCount,
-				[&](const TraceServices::FFrame& Frame)
-				{
-					const double DurMs = (Frame.EndTime - Frame.StartTime) * 1000.0;
-					if (DurMs <= 0.0) { return; } // skip incomplete frame records
-					FTraceFrameRecord Rec;
-					Rec.Index      = (int64)Frame.Index;
-					Rec.DurationMs = DurMs;
-					Result.Frames.Add(Rec);
-				});
-
-			UE_LOG(LogYesUeMcp, Log, TEXT("analyze-ue-trace: %d game frames"), Result.Frames.Num());
-		}
-		else
-		{
-			UE_LOG(LogYesUeMcp, Warning,
-				TEXT("analyze-ue-trace: IFrameProvider not found (trace may lack Frame channel)."));
-		}
+		UE_LOG(LogYesUeMcp, Log, TEXT("analyze-ue-trace: %d game frames"), Result.Frames.Num());
 	}
-
+	else
+	{
+		UE_LOG(LogYesUeMcp, Warning,
+			TEXT("analyze-ue-trace: IFrameProvider not found (trace may lack Frame channel)."));
+	}
+	
 	if (Context.IsCancelled()) { return Result; }
 
-	// B4: timer aggregations
+#pragma endregion
+
+	//Session->TimingProvider拿到全部Timer的统计数据，存到Result.TimerStats（FTraceTimerStat）
+#pragma region Get Timer Stats 
+
+	
+
+	if (TimingProvider)
 	{
-		const TraceServices::ITimingProfilerProvider* TimingProvider =
-			TraceServices::ReadTimingProfilerProvider(*Session);
+		TraceServices::FCreateAggreationParams AggParams;
+		AggParams.IntervalStart   = 0.0;
+		AggParams.IntervalEnd     = Result.DurationSeconds;
+		AggParams.CpuThreadFilter = [](uint32) { return true; };
+		AggParams.IncludeGpu      = true;
+		AggParams.FrameType       = ETraceFrameType::TraceFrameType_Count;
 
-		if (TimingProvider)
+		TraceServices::ITable<TraceServices::FTimingProfilerAggregatedStats>* AggTable =
+			TimingProvider->CreateAggregation(AggParams);
+
+		if (AggTable)
 		{
-			TraceServices::FCreateAggreationParams AggParams;
-			AggParams.IntervalStart   = 0.0;
-			AggParams.IntervalEnd     = Result.DurationSeconds;
-			AggParams.CpuThreadFilter = [](uint32) { return true; };
-			AggParams.IncludeGpu      = true;
-			AggParams.FrameType       = ETraceFrameType::TraceFrameType_Count;
+			TSharedPtr<TraceServices::ITableReader<TraceServices::FTimingProfilerAggregatedStats>>
+				TableReader(AggTable->CreateReader());
 
-			TraceServices::ITable<TraceServices::FTimingProfilerAggregatedStats>* AggTable =
-				TimingProvider->CreateAggregation(AggParams);
-
-			if (AggTable)
+			while (TableReader.IsValid() && TableReader->IsValid())
 			{
-				TSharedPtr<TraceServices::ITableReader<TraceServices::FTimingProfilerAggregatedStats>>
-					TableReader(AggTable->CreateReader());
-
-				while (TableReader.IsValid() && TableReader->IsValid())
+				const TraceServices::FTimingProfilerAggregatedStats* Row = TableReader->GetCurrentRow();
+				if (Row && Row->Timer && Row->InstanceCount > 0)
 				{
-					const TraceServices::FTimingProfilerAggregatedStats* Row = TableReader->GetCurrentRow();
-					if (Row && Row->Timer && Row->InstanceCount > 0)
-					{
-						FTraceTimerStat Stat;
-						Stat.Name        = FString(Row->Timer->Name ? Row->Timer->Name : TEXT("(unknown)"));
-						Stat.bIsGpu      = (Row->Timer->IsGpuTimer != 0);
-						Stat.AvgMs       = Row->AverageInclusiveTime * 1000.0;
-						Stat.MaxMs       = Row->MaxInclusiveTime     * 1000.0;
-						Stat.TotalMs     = Row->TotalInclusiveTime   * 1000.0;
-						Stat.ExclusiveMs = Row->TotalExclusiveTime   * 1000.0;
-						Stat.CallCount   = (int64)Row->InstanceCount;
-						Result.TimerStats.Add(Stat);
-					}
-					TableReader->NextRow();
+					FTraceTimerStat Stat;
+					Stat.Name        = FString(Row->Timer->Name ? Row->Timer->Name : TEXT("(unknown)"));
+					Stat.bIsGpu      = (Row->Timer->IsGpuTimer != 0);
+					Stat.AvgMs       = Row->AverageInclusiveTime * 1000.0;
+					Stat.MaxMs       = Row->MaxInclusiveTime     * 1000.0;
+					Stat.TotalMs     = Row->TotalInclusiveTime   * 1000.0;
+					Stat.ExclusiveMs = Row->TotalExclusiveTime   * 1000.0;
+					Stat.CallCount   = (int64)Row->InstanceCount;
+					Result.TimerStats.Add(Stat);
 				}
-
-				delete AggTable;
-				UE_LOG(LogYesUeMcp, Log, TEXT("analyze-ue-trace: %d timer stats"), Result.TimerStats.Num());
+				TableReader->NextRow();
 			}
-		}
-		else
-		{
-			UE_LOG(LogYesUeMcp, Warning,
-				TEXT("analyze-ue-trace: ITimingProfilerProvider not found."));
+
+			delete AggTable;
+			UE_LOG(LogYesUeMcp, Log, TEXT("analyze-ue-trace: %d timer stats"), Result.TimerStats.Num());
 		}
 	}
+	else
+	{
+		UE_LOG(LogYesUeMcp, Warning,
+			TEXT("analyze-ue-trace: ITimingProfilerProvider not found."));
+	}
+#pragma endregion
 
 	// B4b: per-thread timeline hotspots via raw event enumeration
 	{
-		const TraceServices::ITimingProfilerProvider* TimingProvider =
-			TraceServices::ReadTimingProfilerProvider(*Session);
-		const TraceServices::IThreadProvider& ThreadProvider =
-			TraceServices::ReadThreadProvider(*Session);
-
 		if (TimingProvider)
 		{
 			// Build threadId -> name map
@@ -340,7 +358,8 @@ FTraceParseResult UAnalyzeUeTraceTool::ParseTraceSession(
 			TimingProvider->ReadTimers([&](const TraceServices::ITimingProfilerTimerReader& TimerReader)
 			{
 				const uint32 TimerCount = TimerReader.GetTimerCount();
-
+				//遍历每一个线程的timeline，拿到每个事件的timerId和duration，累加到ExclusiveAccum里，
+				// 最后转换成ThreadTimerStats（FTraceTimerStat）存到Result.ThreadTimerStats
 				ThreadProvider.EnumerateThreads([&](const TraceServices::FThreadInfo& ThreadInfo)
 				{
 					uint32 TimelineIndex = 0;
@@ -355,9 +374,12 @@ FTraceParseResult UAnalyzeUeTraceTool::ParseTraceSession(
 					TMap<uint32, int64>  CallAccum;
 					TMap<uint32, double> MaxAccum;
 
+					//遍历当前线程所有event，累加时长(InclusiveAccum)和调用次数(CallAccum)，并记录最大时长(MaxAccum)
 					TimingProvider->ReadTimeline(TimelineIndex,
 						[&](const TraceServices::ITimeline<TraceServices::FTimingProfilerEvent>& Timeline)
 						{
+							//最后一个参数为（一个返回 EEventEnumerate 的 lambda）
+							//每次调用该lambda，都需要返回一个enum，让其继续检查下一个event
 							Timeline.EnumerateEvents(
 								0.0, Result.DurationSeconds,
 								[&](double StartTime, double EndTime, uint32 Depth,
@@ -375,7 +397,7 @@ FTraceParseResult UAnalyzeUeTraceTool::ParseTraceSession(
 									return TraceServices::EEventEnumerate::Continue;
 								});
 						});
-
+					//key TimerId , value TimerDur
 					for (auto& KV : InclusiveAccum)
 					{
 						const TraceServices::FTimingProfilerTimer* Timer = TimerReader.GetTimer(KV.Key);

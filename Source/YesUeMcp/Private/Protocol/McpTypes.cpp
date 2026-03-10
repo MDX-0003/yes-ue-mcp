@@ -142,6 +142,7 @@ TSharedPtr<FJsonObject> FMcpResponse::ToJson() const
 {
 	TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
 	JsonObject->SetStringField(TEXT("jsonrpc"), JsonRpc);
+	//vsCode建立链接时要求id字段为数值类型，否则会接收不到response
 	if (!Id.IsEmpty())
     {
         // FString::IsNumeric returns true for integers and floats (and negatives).
@@ -208,6 +209,8 @@ TSharedPtr<FJsonObject> FMcpSchemaProperty::ToJson() const
 	// Add items schema for array types. Only emit 'items' when ItemsType is explicitly
 	// set; omitting 'items' is valid per JSON Schema (allows any item type) and avoids
 	// strict MCP validators rejecting an empty items object {}.
+	//只在tool参数类型为array且指定了ItemsType时，添加items字段到输出
+	//item存在但为空会导致外部mcp报错
 	if (Type == TEXT("array") && !ItemsType.IsEmpty())
 	{
 		TSharedPtr<FJsonObject> ItemsObj = MakeShareable(new FJsonObject);

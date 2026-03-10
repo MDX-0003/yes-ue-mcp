@@ -19,7 +19,7 @@ struct YESUEMCP_API FMcpToolContext
 	/** Request ID for progress reporting */
 	FString RequestId;
 
-	/** Cancellation token */
+	/** Cancellation token ,线程安全确保mcp端和ue端能分别读写*/
 	TSharedPtr<FThreadSafeBool> CancellationToken;
 
 	/** Progress callback */
